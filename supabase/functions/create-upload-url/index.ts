@@ -43,10 +43,15 @@ function validateFileName(value: unknown) {
 
 export default {
   fetch: withSupabase(
-    { auth: 'publishable' },
+    { auth: 'user' },
     async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json({ ok: false, error: 'Method not allowed.' }, { status: 405 })
+      }
+
+      const authenticatedUserId = ctx.userClaims?.id
+      if (typeof authenticatedUserId !== 'string' || !authenticatedUserId) {
+        return Response.json({ ok: false, error: 'Authentication is required.' }, { status: 401 })
       }
 
       let body: Record<string, unknown>
@@ -95,7 +100,7 @@ export default {
               : null
 
           const storagePath =
-            `${orderId}/` +
+            `${authenticatedUserId}/${orderId}/` +
             `${String(index + 1).padStart(2, '0')}-` +
             `${crypto.randomUUID()}-` +
             `${safeFileName(originalName)}`
