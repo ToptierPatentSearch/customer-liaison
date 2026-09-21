@@ -124,7 +124,7 @@ export default {
         typeof authenticatedEmail !== 'string' ||
         !validEmail(authenticatedEmail)
       ) {
-        return Response.json({ ok: false, error: 'A verified authenticated account is required.' }, { status: 401 })
+        return Response.json({ ok: false, error: 'An authenticated account is required.' }, { status: 401 })
       }
 
       let body: Record<string, unknown>
