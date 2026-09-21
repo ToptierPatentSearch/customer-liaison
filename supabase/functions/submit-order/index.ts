@@ -72,7 +72,7 @@ function validIsoDate(value: unknown) {
   return value
 }
 
-function validateSupportingDocuments(value: unknown, orderId: string) {
+function validateSupportingDocuments(value: unknown, orderId: string, userId: string) {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw new Error('Supporting documents are invalid.')
   if (value.length > MAX_FILES) {
@@ -88,7 +88,7 @@ function validateSupportingDocuments(value: unknown, orderId: string) {
     const originalName = requiredText(item.original_name, 'Supporting-document name', 255)
     const storagePath = requiredText(item.storage_path, 'Supporting-document storage path', 1000)
 
-    if (!storagePath.startsWith(`${orderId}/`)) {
+    if (!storagePath.startsWith(`${userId}/${orderId}/`)) {
       throw new Error('Supporting-document storage path is invalid.')
     }
 
@@ -109,10 +109,22 @@ function validateSupportingDocuments(value: unknown, orderId: string) {
 
 export default {
   fetch: withSupabase(
-    { auth: 'publishable' },
+    { auth: 'user' },
     async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json({ ok: false, error: 'Method not allowed.' }, { status: 405 })
+      }
+
+      const authenticatedUserId = ctx.userClaims?.id
+      const authenticatedEmail = ctx.userClaims?.email
+
+      if (
+        typeof authenticatedUserId !== 'string' ||
+        !authenticatedUserId ||
+        typeof authenticatedEmail !== 'string' ||
+        !validEmail(authenticatedEmail)
+      ) {
+        return Response.json({ ok: false, error: 'An authenticated account is required.' }, { status: 401 })
       }
 
       let body: Record<string, unknown>
@@ -132,8 +144,7 @@ export default {
 
         const clientName = requiredText(body.name, 'Name', 160)
         const organization = optionalText(body.organization, 200)
-        const email = requiredText(body.email, 'Email address', 254).toLowerCase()
-        if (!validEmail(email)) throw new Error('Please provide a valid email address.')
+        const email = authenticatedEmail.toLowerCase()
         const country = requiredText(body.country, 'Country', 120)
         const billingOrganization = optionalText(body.billingOrganization, 200)
 
@@ -158,10 +169,11 @@ export default {
           throw new Error('The scope-review acknowledgment must be accepted.')
         }
 
-        const supportingDocuments = validateSupportingDocuments(body.supportingDocuments, orderId)
+        const supportingDocuments = validateSupportingDocuments(body.supportingDocuments, orderId, authenticatedUserId)
 
         const { error } = await ctx.supabaseAdmin.from('order_requests').insert({
           id: orderId,
+          user_id: authenticatedUserId,
           order_reference: orderReference,
           client_name: clientName,
           organization,

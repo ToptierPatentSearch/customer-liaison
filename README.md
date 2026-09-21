@@ -78,3 +78,22 @@ The deployable output will be in `dist/`.
 This browser-only version is suitable as a functional baseline, but a public form can be spammed because the publishable key is intentionally browser-visible. Before a production launch, route submission and document uploads through a Supabase Edge Function and add bot protection such as Cloudflare Turnstile. The Edge Function can validate payloads, apply rate limits, and perform the database/storage writes using server-side credentials.
 
 Because submitted technical information may be confidential, keep the Storage bucket private and provide staff access only through authenticated/admin workflows or signed URLs generated server-side.
+
+
+## 6. Enable Supabase Auth
+
+This app now requires a Supabase Auth account before the order form is displayed.
+
+In the Supabase Dashboard for project `syshvcymwktnkrkrvwtk`:
+
+1. Open **Authentication > Providers > Email** and keep Email authentication enabled.
+2. Under **Authentication > URL Configuration**, add this redirect URL:
+   `https://toptierpatentsearch.github.io/search-order-form/`
+3. Apply `supabase/auth-migration.sql` once to the existing project.
+4. Deploy both Edge Functions again:
+   - `create-upload-url`
+   - `submit-order`
+
+The Edge Functions use `withSupabase({ auth: 'user' })`, so a valid signed-in user JWT is required. The order row stores the authenticated user ID, and the email recorded for the order is taken from the authenticated account rather than trusting an editable request field.
+
+For a fresh Supabase project, use the updated `supabase/schema.sql` instead of the migration file.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -41,6 +41,10 @@ const initialForm = {
   additionalInstructions: '',
   acknowledgment: false,
   website: '',
+}
+
+function getAuthRedirectUrl() {
+  return new URL(import.meta.env.BASE_URL, window.location.origin).toString()
 }
 
 function makeOrderReference(orderId) {
@@ -95,11 +99,113 @@ export default function App() {
   const [files, setFiles] = useState([])
   const [status, setStatus] = useState({ type: 'idle', message: '' })
   const [orderReference, setOrderReference] = useState('')
+  const [session, setSession] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [authMode, setAuthMode] = useState('signin')
+  const [authForm, setAuthForm] = useState({ email: '', password: '' })
+  const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
+
+  useEffect(() => {
+    let active = true
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return
+      if (error) {
+        setAuthStatus({ type: 'error', message: error.message })
+      }
+      setSession(data?.session ?? null)
+      setAuthReady(true)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return
+      setSession(nextSession)
+      setAuthReady(true)
+    })
+
+    return () => {
+      active = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    const accountEmail = session?.user?.email
+    if (!accountEmail) return
+
+    setForm((current) =>
+      current.email === accountEmail
+        ? current
+        : { ...current, email: accountEmail },
+    )
+  }, [session])
 
   const fileSummary = useMemo(() => {
     if (!files.length) return 'No supporting documents selected.'
     return `${files.length} supporting document${files.length === 1 ? '' : 's'} selected.`
   }, [files])
+
+  function updateAuthField(event) {
+    const { name, value } = event.target
+    setAuthForm((current) => ({ ...current, [name]: value }))
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault()
+    setAuthStatus({ type: 'loading', message: authMode === 'signin' ? 'Signing in…' : 'Creating account…' })
+
+    try {
+      if (authMode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authForm.email.trim().toLowerCase(),
+          password: authForm.password,
+        })
+        if (error) throw error
+
+        setAuthStatus({ type: 'success', message: 'Signed in successfully.' })
+        setAuthForm((current) => ({ ...current, password: '' }))
+        return
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email: authForm.email.trim().toLowerCase(),
+        password: authForm.password,
+        options: {
+          emailRedirectTo: getAuthRedirectUrl(),
+        },
+      })
+      if (error) throw error
+
+      setAuthForm((current) => ({ ...current, password: '' }))
+      if (data.session) {
+        setAuthStatus({ type: 'success', message: 'Account created and signed in.' })
+      } else {
+        setAuthStatus({
+          type: 'success',
+          message: 'Account created. Please check your email and confirm the account before signing in.',
+        })
+        setAuthMode('signin')
+      }
+    } catch (error) {
+      setAuthStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Authentication failed.',
+      })
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthStatus({ type: 'idle', message: '' })
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setStatus({ type: 'error', message: `Could not sign out. ${error.message}` })
+      return
+    }
+    setForm(initialForm)
+    setFiles([])
+    setOrderReference('')
+    setStatus({ type: 'idle', message: '' })
+  }
 
   function updateField(event) {
     const { name, value, type, checked } = event.target
@@ -199,6 +305,11 @@ export default function App() {
     setStatus({ type: 'idle', message: '' })
     setOrderReference('')
 
+    if (!session?.user) {
+      setStatus({ type: 'error', message: 'Please sign in before submitting order details.' })
+      return
+    }
+
     if (form.website) {
       setStatus({ type: 'success', message: 'Your order details have been received.' })
       return
@@ -234,7 +345,7 @@ export default function App() {
           orderId,
           name: form.name.trim(),
           organization: form.organization.trim(),
-          email: form.email.trim().toLowerCase(),
+          email: session.user.email?.toLowerCase() ?? form.email.trim().toLowerCase(),
           country: form.country.trim(),
           billingOrganization: form.billingOrganization.trim(),
 
@@ -273,7 +384,7 @@ export default function App() {
         message:
           'Your order details were submitted for initial scope review.',
       })
-      setForm(initialForm)
+      setForm({ ...initialForm, email: session.user.email ?? '' })
       setFiles([])
       const fileInput = document.getElementById('supportingDocuments')
       if (fileInput) fileInput.value = ''
@@ -287,6 +398,46 @@ export default function App() {
     }
   }
 
+  if (!authReady) {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="order-form-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="order-form-title">Provide Your Order Details</h1>
+            <p>Secure sign-in is required before confidential order details can be submitted.</p>
+          </header>
+          <div className="auth-panel auth-loading" role="status">Checking your account session…</div>
+        </section>
+      </main>
+    )
+  }
+
+  if (!session) {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="order-form-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="order-form-title">Provide Your Order Details</h1>
+            <p>Sign in or create an account before providing confidential assignment information.</p>
+          </header>
+          <AuthPanel
+            mode={authMode}
+            form={authForm}
+            status={authStatus}
+            onChange={updateAuthField}
+            onSubmit={handleAuthSubmit}
+            onModeChange={(nextMode) => {
+              setAuthMode(nextMode)
+              setAuthStatus({ type: 'idle', message: '' })
+            }}
+          />
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="page-shell">
       <section className="form-card" aria-labelledby="order-form-title">
@@ -295,6 +446,16 @@ export default function App() {
           <h1 id="order-form-title">Provide Your Order Details</h1>
           <p>Please provide sufficient information to permit an initial scope review.</p>
         </header>
+
+        <div className="account-bar">
+          <div>
+            <strong>Signed in</strong>
+            <span>{session.user.email}</span>
+          </div>
+          <button className="secondary-button" type="button" onClick={handleSignOut}>
+            Sign out
+          </button>
+        </div>
 
         {status.type !== 'idle' && (
           <div className={`status status-${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>
@@ -320,7 +481,7 @@ export default function App() {
                 <input name="organization" value={form.organization} onChange={updateField} autoComplete="organization" maxLength="200" />
               </Field>
               <Field label="Email address" required>
-                <input type="email" name="email" value={form.email} onChange={updateField} autoComplete="email" required maxLength="254" />
+                <input type="email" name="email" value={form.email} readOnly autoComplete="email" required maxLength="254" />
               </Field>
               <Field label="Country" required>
                 <input name="country" value={form.country} onChange={updateField} autoComplete="country-name" required maxLength="120" />
@@ -418,6 +579,73 @@ export default function App() {
         </form>
       </section>
     </main>
+  )
+}
+
+function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
+  const isSignIn = mode === 'signin'
+
+  return (
+    <div className="auth-panel">
+      <div className="auth-heading">
+        <p className="auth-kicker">Secure client access</p>
+        <h2>{isSignIn ? 'Sign in to continue' : 'Create your account'}</h2>
+        <p>
+          {isSignIn
+            ? 'Use the account associated with your order request.'
+            : 'Create an account to protect order details and supporting documents.'}
+        </p>
+      </div>
+
+      {status.type !== 'idle' && (
+        <div className={`status auth-status status-${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>
+          <strong>{status.type === 'error' ? 'Authentication issue' : status.type === 'loading' ? 'Processing' : 'Account update'}</strong>
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <form className="auth-form" onSubmit={onSubmit}>
+        <Field label="Email address" required>
+          <input
+            type="email"
+            name="email"
+            value={form.email}
+            onChange={onChange}
+            autoComplete="email"
+            required
+            maxLength="254"
+          />
+        </Field>
+        <Field label="Password" required hint={isSignIn ? '' : 'Use at least 8 characters.'}>
+          <input
+            type="password"
+            name="password"
+            value={form.password}
+            onChange={onChange}
+            autoComplete={isSignIn ? 'current-password' : 'new-password'}
+            required
+            minLength={isSignIn ? undefined : 8}
+          />
+        </Field>
+
+        <button className="primary-button auth-submit" type="submit" disabled={status.type === 'loading'}>
+          {status.type === 'loading'
+            ? (isSignIn ? 'Signing in…' : 'Creating account…')
+            : (isSignIn ? 'Sign In' : 'Create Account')}
+        </button>
+      </form>
+
+      <div className="auth-switch">
+        <span>{isSignIn ? 'Need an account?' : 'Already have an account?'}</span>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => onModeChange(isSignIn ? 'signup' : 'signin')}
+        >
+          {isSignIn ? 'Create account' : 'Sign in'}
+        </button>
+      </div>
+    </div>
   )
 }
 

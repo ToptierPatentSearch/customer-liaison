@@ -5,6 +5,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.order_requests (
   id uuid primary key,
+  user_id uuid references auth.users(id) on delete set null,
   order_reference text not null unique,
   created_at timestamptz not null default now(),
   client_name text not null,
@@ -28,26 +29,18 @@ create table if not exists public.order_requests (
   status text not null default 'submitted'
 );
 
+alter table public.order_requests
+  add column if not exists user_id uuid references auth.users(id) on delete set null;
+
+create index if not exists order_requests_user_id_idx
+  on public.order_requests (user_id);
+
 alter table public.order_requests enable row level security;
 
--- Public form users may submit an order request, but cannot read, update, or delete records.
+-- Orders are written only by the authenticated Edge Function through its admin client.
 drop policy if exists "anon can submit order requests" on public.order_requests;
-create policy "anon can submit order requests"
-on public.order_requests
-for insert
-to anon
-with check (
-  scope_review_acknowledged = true
-  and char_length(client_name) between 1 and 160
-  and char_length(email) between 3 and 254
-  and char_length(country) between 1 and 120
-  and char_length(technical_subject) between 1 and 3000
-  and char_length(search_objective) between 1 and 5000
-  and char_length(relevant_jurisdictions) between 1 and 1000
-);
-
-grant insert on table public.order_requests to anon;
-revoke select, update, delete on table public.order_requests from anon;
+revoke insert, select, update, delete on table public.order_requests from anon;
+revoke insert, select, update, delete on table public.order_requests from authenticated;
 
 -- Private bucket for sensitive supporting materials.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -74,11 +67,14 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
--- Anonymous browser users can only upload into the private bucket.
--- They receive no SELECT/UPDATE/DELETE policy for storage.objects.
+-- Only authenticated users may upload into their own top-level folder.
 drop policy if exists "anon can upload order documents" on storage.objects;
-create policy "anon can upload order documents"
+drop policy if exists "authenticated users can upload order documents" on storage.objects;
+create policy "authenticated users can upload order documents"
 on storage.objects
 for insert
-to anon
-with check (bucket_id = 'order-supporting-documents');
+to authenticated
+with check (
+  bucket_id = 'order-supporting-documents'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
