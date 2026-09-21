@@ -624,7 +624,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
             onChange={onChange}
             autoComplete={isSignIn ? 'current-password' : 'new-password'}
             required
-            minLength="8"
+            minLength={isSignIn ? undefined : 8}
           />
         </Field>
 
