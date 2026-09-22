@@ -42,6 +42,17 @@ drop policy if exists "anon can submit order requests" on public.order_requests;
 revoke insert, select, update, delete on table public.order_requests from anon;
 revoke insert, select, update, delete on table public.order_requests from authenticated;
 
+-- Private administrator allowlist. Browser users cannot read or modify it directly.
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table public.admin_users enable row level security;
+
+revoke all on table public.admin_users from anon;
+revoke all on table public.admin_users from authenticated;
+
 -- Private bucket for sensitive supporting materials.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
