@@ -97,3 +97,57 @@ In the Supabase Dashboard for project `syshvcymwktnkrkrvwtk`:
 The Edge Functions use `withSupabase({ auth: 'user' })`, so a valid signed-in user JWT is required. The order row stores the authenticated user ID, and the email recorded for the order is taken from the authenticated account rather than trusting an editable request field.
 
 For a fresh Supabase project, use the updated `supabase/schema.sql` instead of the migration file.
+
+
+## 7. Administrator Orders Dashboard
+
+The app includes an administrator-only order dashboard. Authorization is enforced by the `admin-orders` Edge Function, not only by the React UI.
+
+### Apply the administrator migration
+
+For the existing Supabase project, run:
+
+```text
+supabase/admin-dashboard-migration.sql
+```
+
+This creates `public.admin_users`, a private allowlist that ordinary authenticated users cannot read or modify.
+
+### Assign an administrator
+
+The administrator must first have a Supabase Auth account. Then run the following in the Supabase SQL Editor, replacing the placeholder with the administrator's actual sign-in email:
+
+```sql
+insert into public.admin_users (user_id)
+select id
+from auth.users
+where lower(email) = lower('ADMIN_EMAIL_HERE')
+on conflict (user_id) do nothing;
+```
+
+### Deploy the administrator Edge Function
+
+Deploy:
+
+```text
+supabase/functions/admin-orders/index.ts
+```
+
+as the Edge Function named:
+
+```text
+admin-orders
+```
+
+### Use the dashboard
+
+After an allowlisted administrator signs in, the order-form account bar displays an **Administrator** button. Selecting it opens the administrator Orders page.
+
+The page provides:
+- all order records, loaded in pages from newest to oldest
+- search across references, clients, email, services, subjects, objectives, and related fields
+- full order details
+- secure, short-lived signed links for supporting documents
+- no administrator navigation or order data for ordinary users
+
+A direct request to the administrator Edge Function from a non-administrator receives a 403 response for order-list or document access.
