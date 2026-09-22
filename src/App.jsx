@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import AdminOrders from './AdminOrders.jsx'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -120,6 +121,12 @@ export default function App() {
   const [authMode, setAuthMode] = useState('signin')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
+  const [adminAccess, setAdminAccess] = useState({ checked: false, isAdmin: false })
+  const [view, setView] = useState(() =>
+    new URLSearchParams(window.location.search).get('view') === 'admin'
+      ? 'admin'
+      : 'order',
+  )
 
   useEffect(() => {
     let active = true
@@ -155,6 +162,61 @@ export default function App() {
         : { ...current, email: accountEmail },
     )
   }, [session])
+
+  useEffect(() => {
+    let active = true
+
+    if (!session?.user) {
+      setAdminAccess({ checked: false, isAdmin: false })
+      return () => {
+        active = false
+      }
+    }
+
+    setAdminAccess({ checked: false, isAdmin: false })
+
+    supabase.functions
+      .invoke('admin-orders', { body: { action: 'status' } })
+      .then(({ data, error }) => {
+        if (!active) return
+
+        const isAdmin =
+          !error &&
+          data?.ok === true &&
+          data?.isAdmin === true
+
+        setAdminAccess({ checked: true, isAdmin })
+
+        if (!isAdmin && view === 'admin') {
+          setView('order')
+          const url = new URL(window.location.href)
+          url.searchParams.delete('view')
+          window.history.replaceState({}, '', url)
+        }
+      })
+      .catch(() => {
+        if (!active) return
+        setAdminAccess({ checked: true, isAdmin: false })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [session, view])
+
+  function navigateView(nextView) {
+    setView(nextView)
+    const url = new URL(window.location.href)
+
+    if (nextView === 'admin') {
+      url.searchParams.set('view', 'admin')
+    } else {
+      url.searchParams.delete('view')
+    }
+
+    window.history.replaceState({}, '', url)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const fileSummary = useMemo(() => {
     if (!files.length) return 'No supporting documents selected.'
@@ -240,6 +302,7 @@ export default function App() {
     setFiles([])
     setOrderReference('')
     setStatus({ type: 'idle', message: '' })
+    navigateView('order')
   }
 
   function updateField(event) {
@@ -434,6 +497,22 @@ export default function App() {
     }
   }
 
+  if (
+    authReady &&
+    session &&
+    adminAccess.checked &&
+    adminAccess.isAdmin &&
+    view === 'admin'
+  ) {
+    return (
+      <AdminOrders
+        adminEmail={session.user.email ?? ''}
+        onBack={() => navigateView('order')}
+        onSignOut={handleSignOut}
+      />
+    )
+  }
+
   if (!authReady) {
     return (
       <main className="page-shell">
@@ -488,9 +567,20 @@ export default function App() {
             <strong>Signed in</strong>
             <span>{session.user.email}</span>
           </div>
-          <button className="secondary-button" type="button" onClick={handleSignOut}>
-            Sign out
-          </button>
+          <div className="account-actions">
+            {adminAccess.checked && adminAccess.isAdmin && (
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => navigateView('admin')}
+              >
+                Administrator
+              </button>
+            )}
+            <button className="secondary-button" type="button" onClick={handleSignOut}>
+              Sign out
+            </button>
+          </div>
         </div>
 
         {status.type !== 'idle' && (
