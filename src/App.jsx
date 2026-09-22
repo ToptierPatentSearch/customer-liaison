@@ -77,6 +77,22 @@ function parseUsDate(value) {
   return `${yearText}-${monthText.padStart(2, '0')}-${dayText.padStart(2, '0')}`
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function validateOrderForm(form) {
+  if (!form.name.trim()) return 'Please enter your name.'
+  if (!form.country.trim()) return 'Please enter your country.'
+  if (!form.searchService) return 'Please select a search service.'
+  if (!form.technicalSubject.trim()) return 'Please enter the technical subject.'
+  if (!form.searchObjective.trim()) return 'Please enter the search objective.'
+  if (!form.jurisdictions.trim()) return 'Please enter the relevant jurisdictions.'
+  if (!form.preferredDeliverable) return 'Please select a preferred deliverable.'
+  if (!form.acknowledgment) return 'Please confirm the scope-review acknowledgment before submitting.'
+  return ''
+}
+
 function validateFiles(files) {
   if (files.length > MAX_FILES) {
     return `Please attach no more than ${MAX_FILES} files.`
@@ -152,12 +168,31 @@ export default function App() {
 
   async function handleAuthSubmit(event) {
     event.preventDefault()
+
+    const email = authForm.email.trim().toLowerCase()
+    if (!email) {
+      setAuthStatus({ type: 'error', message: 'Please enter your email address.' })
+      return
+    }
+    if (!isValidEmail(email)) {
+      setAuthStatus({ type: 'error', message: 'Please enter a valid email address.' })
+      return
+    }
+    if (!authForm.password) {
+      setAuthStatus({ type: 'error', message: 'Please enter your password.' })
+      return
+    }
+    if (authMode === 'signup' && authForm.password.length < 8) {
+      setAuthStatus({ type: 'error', message: 'Please use a password with at least 8 characters.' })
+      return
+    }
+
     setAuthStatus({ type: 'loading', message: authMode === 'signin' ? 'Signing in…' : 'Creating account…' })
 
     try {
       if (authMode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({
-          email: authForm.email.trim().toLowerCase(),
+          email,
           password: authForm.password,
         })
         if (error) throw error
@@ -168,7 +203,7 @@ export default function App() {
       }
 
       const { data, error } = await supabase.auth.signUp({
-        email: authForm.email.trim().toLowerCase(),
+        email,
         password: authForm.password,
         options: {
           emailRedirectTo: getAuthRedirectUrl(),
@@ -315,8 +350,9 @@ export default function App() {
       return
     }
 
-    if (!form.acknowledgment) {
-      setStatus({ type: 'error', message: 'Please confirm the scope-review acknowledgment before submitting.' })
+    const formError = validateOrderForm(form)
+    if (formError) {
+      setStatus({ type: 'error', message: formError })
       return
     }
 
@@ -465,7 +501,7 @@ export default function App() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="honeypot" aria-hidden="true">
             <label htmlFor="website">Website</label>
             <input id="website" name="website" tabIndex="-1" autoComplete="off" value={form.website} onChange={updateField} />
@@ -549,16 +585,26 @@ export default function App() {
               Where appropriate, you may provide patent claims, an invention disclosure, drawings, relevant patent documents,
               technical documents, known prior art, or other materials necessary to understand the assignment.
             </p>
-            <Field label="Attach supporting documents" hint="Up to 8 files, 10 MB each. Accepted: PDF, Office files, TXT, PNG, JPG.">
+            <div className="field">
+              <span className="field-label">Attach supporting documents</span>
               <input
                 id="supportingDocuments"
+                className="file-input-hidden"
                 type="file"
                 multiple
                 onChange={handleFiles}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
               />
-            </Field>
-            <p className="file-summary">{fileSummary}</p>
+              <div className="file-picker-row">
+                <label className="file-picker-button" htmlFor="supportingDocuments">
+                  Choose Files
+                </label>
+                <span className="file-picker-status" aria-live="polite">
+                  {fileSummary}
+                </span>
+              </div>
+              <span className="hint">Up to 8 files, 10 MB each. Accepted: PDF, Office files, TXT, PNG, JPG.</span>
+            </div>
           </fieldset>
 
           <div className="acknowledgment-box">
@@ -604,7 +650,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
         </div>
       )}
 
-      <form className="auth-form" onSubmit={onSubmit}>
+      <form className="auth-form" onSubmit={onSubmit} noValidate>
         <Field label="Email address" required>
           <input
             type="email"

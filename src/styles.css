@@ -57,9 +57,48 @@ input, select, textarea {
 }
 textarea { resize: vertical; min-height: 86px; line-height: 1.55; }
 input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0 0 0 3px rgba(82, 111, 146, 0.14); }
-input[type="file"] { padding: 9px; background: #f8fafc; }
-
-.file-summary { margin: 10px 0 0; color: #647384; font-size: 0.86rem; }
+.file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.file-picker-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.file-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 1px solid #9aa9b8;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #2f4867;
+  padding: 9px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.file-picker-button:hover { background: #eef3f7; }
+.file-input-hidden:focus + .file-picker-row .file-picker-button,
+.file-input-hidden:focus-visible + .file-picker-row .file-picker-button {
+  border-color: #526f92;
+  box-shadow: 0 0 0 3px rgba(82, 111, 146, 0.14);
+}
+.file-picker-status {
+  color: #647384;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
 .acknowledgment-box { margin-top: 30px; padding: 18px 20px; border: 1px solid #d7dee6; border-left: 4px solid #5c7390; border-radius: 8px; background: #f7f9fb; }
 .check-row { display: flex; gap: 12px; align-items: flex-start; color: #34485f; line-height: 1.55; }
 .check-row input { width: 18px; height: 18px; margin-top: 3px; flex: 0 0 auto; }
