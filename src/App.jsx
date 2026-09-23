@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import AdminOrders from './AdminOrders.jsx'
+import AdminDashboard from './AdminDashboard.jsx'
+import DiscussProject from './DiscussProject.jsx'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -42,6 +43,7 @@ const initialForm = {
   additionalInstructions: '',
   acknowledgment: false,
   website: '',
+  discussionId: '',
 }
 
 function getAuthRedirectUrl() {
@@ -122,11 +124,12 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
   const [adminAccess, setAdminAccess] = useState({ checked: false, isAdmin: false })
-  const [view, setView] = useState(() =>
-    new URLSearchParams(window.location.search).get('view') === 'admin'
-      ? 'admin'
-      : 'order',
-  )
+  const [view, setView] = useState(() => {
+    const requestedView = new URLSearchParams(window.location.search).get('view')
+    if (requestedView === 'admin') return 'admin'
+    if (requestedView === 'discuss') return 'discuss'
+    return 'order'
+  })
 
   useEffect(() => {
     let active = true
@@ -208,8 +211,8 @@ export default function App() {
     setView(nextView)
     const url = new URL(window.location.href)
 
-    if (nextView === 'admin') {
-      url.searchParams.set('view', 'admin')
+    if (nextView === 'admin' || nextView === 'discuss') {
+      url.searchParams.set('view', nextView)
     } else {
       url.searchParams.delete('view')
     }
@@ -302,6 +305,38 @@ export default function App() {
     setFiles([])
     setOrderReference('')
     setStatus({ type: 'idle', message: '' })
+    navigateView('order')
+  }
+
+  function handleContinueToOrder(discussion) {
+    const mappedService = SERVICE_OPTIONS.includes(discussion.projectType)
+      ? discussion.projectType
+      : ''
+
+    const carriedInstructions = [
+      discussion.discussionReference
+        ? `Originating discussion: ${discussion.discussionReference}`
+        : '',
+      discussion.additionalInformation || '',
+      discussion.timing ? `Relevant timing from discussion: ${discussion.timing}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
+    setForm((current) => ({
+      ...current,
+      name: discussion.name || current.name,
+      organization: discussion.organization || current.organization,
+      email: session?.user?.email ?? current.email,
+      searchService: mappedService,
+      technicalSubject: discussion.technologyDescription || '',
+      searchObjective: discussion.objective || '',
+      knownPatentDocuments: discussion.knownPatentDocuments || '',
+      additionalInstructions: carriedInstructions,
+      discussionId: discussion.discussionId || '',
+    }))
+    setStatus({ type: 'idle', message: '' })
+    setOrderReference('')
     navigateView('order')
   }
 
@@ -442,6 +477,7 @@ export default function App() {
       const { data, error } = await supabase.functions.invoke('submit-order', {
         body: {
           orderId,
+          discussionId: form.discussionId || null,
           name: form.name.trim(),
           organization: form.organization.trim(),
           email: session.user.email?.toLowerCase() ?? form.email.trim().toLowerCase(),
@@ -505,7 +541,7 @@ export default function App() {
     view === 'admin'
   ) {
     return (
-      <AdminOrders
+      <AdminDashboard
         adminEmail={session.user.email ?? ''}
         onBack={() => navigateView('order')}
         onSignOut={handleSignOut}
@@ -553,6 +589,54 @@ export default function App() {
     )
   }
 
+  if (view === 'discuss') {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="discussion-form-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="discussion-form-title">Discuss a Project</h1>
+            <p>
+              Describe the project first when the exact search scope, service type, or deliverable still needs clarification.
+            </p>
+          </header>
+
+          <div className="account-bar">
+            <div>
+              <strong>Signed in</strong>
+              <span>{session.user.email}</span>
+            </div>
+            <div className="account-actions">
+              <button className="secondary-button active-workflow-button" type="button" disabled>
+                Discuss a Project
+              </button>
+              <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
+                Request a Search
+              </button>
+              {adminAccess.checked && adminAccess.isAdmin && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => navigateView('admin')}
+                >
+                  Administrator
+                </button>
+              )}
+              <button className="secondary-button" type="button" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <DiscussProject
+            session={session}
+            onContinueToOrder={handleContinueToOrder}
+          />
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="page-shell">
       <section className="form-card" aria-labelledby="order-form-title">
@@ -568,6 +652,12 @@ export default function App() {
             <span>{session.user.email}</span>
           </div>
           <div className="account-actions">
+            <button className="secondary-button" type="button" onClick={() => navigateView('discuss')}>
+              Discuss a Project
+            </button>
+            <button className="secondary-button active-workflow-button" type="button" disabled>
+              Request a Search
+            </button>
             {adminAccess.checked && adminAccess.isAdmin && (
               <button
                 className="secondary-button"
@@ -582,6 +672,15 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {form.discussionId && status.type === 'idle' && (
+          <div className="discussion-link-note" role="status">
+            <strong>Project discussion carried forward</strong>
+            <span>
+              Core project information has been prefilled. Complete the remaining search-specific fields before submitting the request.
+            </span>
+          </div>
+        )}
 
         {status.type !== 'idle' && (
           <div className={`status status-${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>

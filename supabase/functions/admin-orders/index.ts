@@ -91,6 +91,41 @@ export default {
           })
         }
 
+        if (body.action === 'list-discussions') {
+          const requestedOffset = Number(body.offset ?? 0)
+          const requestedLimit = Number(body.limit ?? 100)
+
+          const offset =
+            Number.isInteger(requestedOffset) && requestedOffset >= 0
+              ? requestedOffset
+              : 0
+
+          const limit =
+            Number.isInteger(requestedLimit) && requestedLimit > 0
+              ? Math.min(requestedLimit, MAX_PAGE_SIZE)
+              : 100
+
+          const { data, error, count } = await ctx.supabaseAdmin
+            .from('project_discussions')
+            .select('*', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1)
+
+          if (error) {
+            console.error('Administrator discussion query failed:', error)
+            return Response.json(
+              { ok: false, error: 'Project discussions could not be loaded.' },
+              { status: 500 },
+            )
+          }
+
+          return Response.json({
+            ok: true,
+            discussions: data ?? [],
+            total: count ?? data?.length ?? 0,
+          })
+        }
+
         if (body.action === 'document-url') {
           const orderId = body.orderId
           const storagePath = body.storagePath

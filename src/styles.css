@@ -370,3 +370,80 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
   .admin-order > summary { grid-template-columns: 1fr; }
 }
 
+.active-workflow-button,
+.active-workflow-button:disabled {
+  border-color: #526f92;
+  background: #eaf0f6;
+  color: #2f4867;
+  cursor: default;
+  opacity: 1;
+}
+
+.discussion-link-note {
+  margin: 26px 38px 0;
+  padding: 15px 17px;
+  border: 1px solid #c9d7e5;
+  border-left: 4px solid #526f92;
+  border-radius: 8px;
+  background: #f5f8fb;
+  color: #365674;
+  display: grid;
+  gap: 5px;
+  line-height: 1.45;
+}
+
+.discussion-next-step {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(44, 93, 57, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.discussion-next-step span {
+  flex: 1;
+}
+
+.admin-tabs {
+  margin: 22px 38px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #dbe2e8;
+}
+
+.admin-tab {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #5f7082;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-tab:hover {
+  color: #334b67;
+  background: #f7f9fb;
+}
+
+.admin-tab.active {
+  border-bottom-color: #526f92;
+  color: #2f4867;
+}
+
+@media (max-width: 720px) {
+  .discussion-link-note,
+  .admin-tabs {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .discussion-next-step {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
