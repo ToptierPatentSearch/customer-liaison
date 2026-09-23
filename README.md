@@ -151,3 +151,66 @@ The page provides:
 - no administrator navigation or order data for ordinary users
 
 A direct request to the administrator Edge Function from a non-administrator receives a 403 response for order-list or document access.
+
+## 8. Discuss a Project with the same authenticated account
+
+The client workspace now provides two authenticated workflows under the same Supabase Auth session:
+
+- **Discuss a Project** — a shorter scope-clarification form for prospects who are not yet ready to submit full search instructions.
+- **Request a Search** — the existing detailed order/search-request form.
+
+A signed-in prospect can switch between the two workflows without signing in again.
+
+### Apply the existing-project migration
+
+Run:
+
+```text
+supabase/discuss-project-migration.sql
+```
+
+in the Supabase SQL Editor before deploying the updated frontend. The migration creates:
+
+- `public.project_discussions`
+- indexes for discussion lookup
+- RLS/revocations so browser clients cannot read or write the table directly
+- `order_requests.discussion_id` for linking a formal search request to its originating discussion
+
+For a brand-new Supabase project, the current `supabase/schema.sql` includes the same structure.
+
+### Deploy the discussion Edge Function
+
+Deploy:
+
+```text
+supabase/functions/submit-discussion/index.ts
+```
+
+as:
+
+```text
+submit-discussion
+```
+
+The function requires an authenticated Supabase user and derives `user_id` and email from the authenticated claims.
+
+### Redeploy changed existing Edge Functions
+
+Because this feature also extends the existing server-side behavior, redeploy:
+
+- `submit-order` — verifies and stores the optional originating discussion ID.
+- `admin-orders` — adds the administrator-only discussion list.
+
+### Administrator workspace
+
+The administrator page now has two tabs:
+
+- **Discussions**
+- **Search Requests**
+
+The existing administrator allowlist remains the authorization source. Discussion records and order records are still unavailable directly to ordinary authenticated browser clients.
+
+### Discussion-to-request handoff
+
+After a successful discussion submission, the client can choose **Continue to Request a Search**. The application carries the project type (when it maps to a supported service), technical description, objective, known patent documents, timing/context, and the discussion ID into the detailed search-request workflow. The `submit-order` Edge Function confirms that the originating discussion belongs to the same authenticated account before creating the linked order.
+
