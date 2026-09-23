@@ -377,7 +377,7 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
                 <h2>Client</h2>
                 <dl>
                   <Definition label="Reference" value={textOrDash(order.order_reference)} mono />
-                  <Definition label="Originating discussion" value={textOrDash(order.discussion_id)} mono />
+                  <Definition label="Originating discussion ID" value={textOrDash(order.discussion_id)} mono />
                   <Definition label="Name" value={textOrDash(order.client_name)} />
                   <Definition label="Organization" value={textOrDash(order.organization)} />
                   <Definition label="Email" value={textOrDash(order.email)} />
