@@ -33,6 +33,12 @@ function isUuid(value: unknown): value is string {
   )
 }
 
+function optionalUuid(value: unknown, fieldName: string) {
+  if (value === null || value === undefined || value === '') return null
+  if (!isUuid(value)) throw new Error(`${fieldName} is invalid.`)
+  return value
+}
+
 function requiredText(value: unknown, fieldName: string, maximum: number) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${fieldName} is required.`)
@@ -141,6 +147,24 @@ export default {
       try {
         const orderId = isUuid(body.orderId) ? body.orderId : crypto.randomUUID()
         const orderReference = makeOrderReference(orderId)
+        const discussionId = optionalUuid(body.discussionId, 'Originating discussion')
+
+        if (discussionId) {
+          const { data: discussion, error: discussionError } = await ctx.supabaseAdmin
+            .from('project_discussions')
+            .select('id, user_id')
+            .eq('id', discussionId)
+            .maybeSingle()
+
+          if (discussionError) {
+            console.error('Originating discussion lookup failed:', discussionError)
+            throw new Error('The originating project discussion could not be verified.')
+          }
+
+          if (!discussion || discussion.user_id !== authenticatedUserId) {
+            throw new Error('The originating project discussion does not belong to this account.')
+          }
+        }
 
         const clientName = requiredText(body.name, 'Name', 160)
         const organization = optionalText(body.organization, 200)
@@ -174,6 +198,7 @@ export default {
         const { error } = await ctx.supabaseAdmin.from('order_requests').insert({
           id: orderId,
           user_id: authenticatedUserId,
+          discussion_id: discussionId,
           order_reference: orderReference,
           client_name: clientName,
           organization,
