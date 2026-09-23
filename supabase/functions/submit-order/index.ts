@@ -232,6 +232,21 @@ export default {
           )
         }
 
+        if (discussionId) {
+          const { error: discussionUpdateError } = await ctx.supabaseAdmin
+            .from('project_discussions')
+            .update({
+              status: 'converted',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', discussionId)
+            .eq('user_id', authenticatedUserId)
+
+          if (discussionUpdateError) {
+            console.error('Discussion conversion status update failed:', discussionUpdateError)
+          }
+        }
+
         return Response.json(
           {
             ok: true,
