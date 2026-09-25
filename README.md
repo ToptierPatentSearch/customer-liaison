@@ -88,7 +88,7 @@ In the Supabase Dashboard for project `syshvcymwktnkrkrvwtk`:
 
 1. Open **Authentication > Providers > Email** and keep Email authentication enabled.
 2. Under **Authentication > URL Configuration**, add this redirect URL:
-   `https://toptierpatentsearch.github.io/search-order-form/`
+   `https://toptierpatentsearch.github.io/customer-liaison/`
 3. Apply `supabase/auth-migration.sql` once to the existing project.
 4. Deploy both Edge Functions again:
    - `create-upload-url`
@@ -214,3 +214,68 @@ The existing administrator allowlist remains the authorization source. Discussio
 
 After a successful discussion submission, the client can choose **Continue to Request a Search**. The application carries the project type (when it maps to a supported service), technical description, objective, known patent documents, timing/context, and the discussion ID into the detailed search-request workflow. The `submit-order` Edge Function confirms that the originating discussion belongs to the same authenticated account before creating the linked order.
 
+
+
+## 9. Request a Custom Quote
+
+The authenticated client workspace now provides three related workflows:
+
+- **Discuss a Project** — clarify scope when the appropriate service or deliverable is not yet settled.
+- **Request a Custom Quote** — provide enough scope information to estimate timing, deliverables, and professional fee.
+- **Request a Search** — submit detailed instructions for a formal search request.
+
+A discussion can be carried into a quotation request, and a quotation request can be carried into a Search Request without re-entering the core project information.
+
+### Apply the quote migration
+
+For the existing Supabase project, run:
+
+```text
+supabase/quote-request-migration.sql
+```
+
+The migration creates:
+
+- `public.quote_requests`
+- a private `quote-supporting-documents` Storage bucket
+- `order_requests.quote_id` for linking a formal Search Request to its originating quotation request
+- indexes and RLS/revocations consistent with the existing server-side security model
+
+For a fresh Supabase project, the current `supabase/schema.sql` includes the same structure.
+
+### Deploy the quote Edge Functions
+
+Deploy:
+
+```text
+supabase/functions/create-quote-upload-url/index.ts
+supabase/functions/submit-quote/index.ts
+```
+
+as the Edge Functions:
+
+```text
+create-quote-upload-url
+submit-quote
+```
+
+Also redeploy these changed existing functions:
+
+```text
+submit-order
+admin-orders
+```
+
+### Administrator workspace
+
+The administrator dashboard now has three tabs:
+
+- **Discussions**
+- **Quote Requests**
+- **Search Requests**
+
+Quote supporting documents are opened through short-lived signed URLs generated only after administrator authorization.
+
+### Quote-to-search handoff
+
+After a quotation request is successfully submitted, the client can select **Continue to Request a Search**. The application carries relevant quote data into the Search Request and stores the originating quote ID. When the Search Request is accepted by the backend, the quotation request status is updated to `converted`.
