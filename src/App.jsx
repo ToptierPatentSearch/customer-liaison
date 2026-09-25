@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminDashboard from './AdminDashboard.jsx'
 import DiscussProject from './DiscussProject.jsx'
+import QuoteRequest from './QuoteRequest.jsx'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -44,6 +45,7 @@ const initialForm = {
   acknowledgment: false,
   website: '',
   discussionId: '',
+  quoteId: '',
 }
 
 function getAuthRedirectUrl() {
@@ -82,6 +84,13 @@ function parseUsDate(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function formatIsoForUsDate(value) {
+  if (!value || typeof value !== 'string') return ''
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return ''
+  return `${match[2]}/${match[3]}/${match[1]}`
 }
 
 function validateOrderForm(form) {
@@ -124,10 +133,12 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
   const [adminAccess, setAdminAccess] = useState({ checked: false, isAdmin: false })
+  const [quoteSeed, setQuoteSeed] = useState({})
   const [view, setView] = useState(() => {
     const requestedView = new URLSearchParams(window.location.search).get('view')
     if (requestedView === 'admin') return 'admin'
     if (requestedView === 'discuss') return 'discuss'
+    if (requestedView === 'quote') return 'quote'
     return 'order'
   })
 
@@ -211,7 +222,7 @@ export default function App() {
     setView(nextView)
     const url = new URL(window.location.href)
 
-    if (nextView === 'admin' || nextView === 'discuss') {
+    if (nextView === 'admin' || nextView === 'discuss' || nextView === 'quote') {
       url.searchParams.set('view', nextView)
     } else {
       url.searchParams.delete('view')
@@ -304,6 +315,7 @@ export default function App() {
     setForm(initialForm)
     setFiles([])
     setOrderReference('')
+    setQuoteSeed({})
     setStatus({ type: 'idle', message: '' })
     navigateView('order')
   }
@@ -334,6 +346,61 @@ export default function App() {
       knownPatentDocuments: discussion.knownPatentDocuments || '',
       additionalInstructions: carriedInstructions,
       discussionId: discussion.discussionId || '',
+    }))
+    setStatus({ type: 'idle', message: '' })
+    setOrderReference('')
+    navigateView('order')
+  }
+
+  function handleContinueToQuote(discussion) {
+    const mappedService = SERVICE_OPTIONS.includes(discussion.projectType)
+      ? discussion.projectType
+      : ''
+
+    setQuoteSeed({
+      name: discussion.name || '',
+      organization: discussion.organization || '',
+      searchService: mappedService,
+      technicalSubject: discussion.technologyDescription || '',
+      projectDescription: discussion.additionalInformation || '',
+      searchObjective: discussion.objective || '',
+      knownPatentDocuments: discussion.knownPatentDocuments || '',
+      additionalInformation: discussion.timing
+        ? `Relevant timing from discussion: ${discussion.timing}`
+        : '',
+      discussionId: discussion.discussionId || '',
+    })
+    navigateView('quote')
+  }
+
+  function handleContinueQuoteToOrder(quote) {
+    const carriedInstructions = [
+      quote.quoteReference ? `Originating quote request: ${quote.quoteReference}` : '',
+      quote.projectDescription || '',
+      quote.budgetConsiderations ? `Budget considerations from quote request: ${quote.budgetConsiderations}` : '',
+      quote.additionalInformation || '',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
+    setForm((current) => ({
+      ...current,
+      name: quote.name || current.name,
+      organization: quote.organization || current.organization,
+      email: session?.user?.email ?? current.email,
+      country: quote.country || current.country,
+      searchService: quote.searchService || '',
+      technicalSubject: quote.technicalSubject || '',
+      searchObjective: quote.searchObjective || '',
+      jurisdictions: quote.jurisdictions || '',
+      relevantDates: quote.relevantDates || '',
+      knownPatentDocuments: quote.knownPatentDocuments || '',
+      knownCompetitors: quote.knownCompetitors || '',
+      requestedCompletionDate: formatIsoForUsDate(quote.desiredCompletionDate),
+      preferredDeliverable: quote.preferredDeliverable || '',
+      additionalInstructions: carriedInstructions,
+      discussionId: quote.discussionId || '',
+      quoteId: quote.quoteId || '',
     }))
     setStatus({ type: 'idle', message: '' })
     setOrderReference('')
@@ -478,6 +545,7 @@ export default function App() {
         body: {
           orderId,
           discussionId: form.discussionId || null,
+          quoteId: form.quoteId || null,
           name: form.name.trim(),
           organization: form.organization.trim(),
           email: session.user.email?.toLowerCase() ?? form.email.trim().toLowerCase(),
@@ -610,6 +678,16 @@ export default function App() {
               <button className="secondary-button active-workflow-button" type="button" disabled>
                 Discuss a Project
               </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setQuoteSeed({})
+                  navigateView('quote')
+                }}
+              >
+                Request a Custom Quote
+              </button>
               <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
                 Request a Search
               </button>
@@ -630,7 +708,54 @@ export default function App() {
 
           <DiscussProject
             session={session}
+            onContinueToQuote={handleContinueToQuote}
             onContinueToOrder={handleContinueToOrder}
+          />
+        </section>
+      </main>
+    )
+  }
+
+  if (view === 'quote') {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="quote-form-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="quote-form-title">Request a Custom Quote</h1>
+            <p>Provide enough information to estimate scope, timing, deliverables, and professional fee before a search engagement is authorized.</p>
+          </header>
+
+          <div className="account-bar">
+            <div>
+              <strong>Signed in</strong>
+              <span>{session.user.email}</span>
+            </div>
+            <div className="account-actions">
+              <button className="secondary-button" type="button" onClick={() => navigateView('discuss')}>
+                Discuss a Project
+              </button>
+              <button className="secondary-button active-workflow-button" type="button" disabled>
+                Request a Custom Quote
+              </button>
+              <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
+                Request a Search
+              </button>
+              {adminAccess.checked && adminAccess.isAdmin && (
+                <button className="secondary-button" type="button" onClick={() => navigateView('admin')}>
+                  Administrator
+                </button>
+              )}
+              <button className="secondary-button" type="button" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <QuoteRequest
+            session={session}
+            initialData={quoteSeed}
+            onContinueToOrder={handleContinueQuoteToOrder}
           />
         </section>
       </main>
@@ -655,6 +780,16 @@ export default function App() {
             <button className="secondary-button" type="button" onClick={() => navigateView('discuss')}>
               Discuss a Project
             </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                setQuoteSeed({})
+                navigateView('quote')
+              }}
+            >
+              Request a Custom Quote
+            </button>
             <button className="secondary-button active-workflow-button" type="button" disabled>
               Request a Search
             </button>
@@ -673,7 +808,16 @@ export default function App() {
           </div>
         </div>
 
-        {form.discussionId && status.type === 'idle' && (
+        {form.quoteId && status.type === 'idle' && (
+          <div className="discussion-link-note" role="status">
+            <strong>Custom quote request carried forward</strong>
+            <span>
+              Quote information has been prefilled. Review the search-specific details before submitting the formal request.
+            </span>
+          </div>
+        )}
+
+        {!form.quoteId && form.discussionId && status.type === 'idle' && (
           <div className="discussion-link-note" role="status">
             <strong>Project discussion carried forward</strong>
             <span>
