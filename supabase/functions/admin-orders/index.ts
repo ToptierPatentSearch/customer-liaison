@@ -1,6 +1,7 @@
 import { withSupabase } from 'npm:@supabase/server@^1'
 
-const BUCKET = 'order-supporting-documents'
+const ORDER_BUCKET = 'order-supporting-documents'
+const QUOTE_BUCKET = 'quote-supporting-documents'
 const MAX_PAGE_SIZE = 200
 
 function isUuid(value: unknown): value is string {
@@ -23,6 +24,110 @@ async function isAdministrator(ctx: any, userId: string) {
   }
 
   return Boolean(data?.user_id)
+}
+
+function paging(body: Record<string, unknown>) {
+  const requestedOffset = Number(body.offset ?? 0)
+  const requestedLimit = Number(body.limit ?? 100)
+
+  return {
+    offset: Number.isInteger(requestedOffset) && requestedOffset >= 0 ? requestedOffset : 0,
+    limit:
+      Number.isInteger(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, MAX_PAGE_SIZE)
+        : 100,
+  }
+}
+
+async function listRecords(
+  ctx: any,
+  table: string,
+  key: string,
+  errorMessage: string,
+  body: Record<string, unknown>,
+) {
+  const { offset, limit } = paging(body)
+
+  const { data, error, count } = await ctx.supabaseAdmin
+    .from(table)
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (error) {
+    console.error(`Administrator ${table} query failed:`, error)
+    return Response.json({ ok: false, error: errorMessage }, { status: 500 })
+  }
+
+  return Response.json({
+    ok: true,
+    [key]: data ?? [],
+    total: count ?? data?.length ?? 0,
+  })
+}
+
+async function createDocumentUrl(
+  ctx: any,
+  body: Record<string, unknown>,
+  options: {
+    idField: string
+    table: string
+    bucket: string
+    missingMessage: string
+  },
+) {
+  const recordId = body[options.idField]
+  const storagePath = body.storagePath
+
+  if (!isUuid(recordId) || typeof storagePath !== 'string' || !storagePath.trim()) {
+    return Response.json(
+      { ok: false, error: 'Invalid supporting-document request.' },
+      { status: 400 },
+    )
+  }
+
+  const { data: record, error: recordError } = await ctx.supabaseAdmin
+    .from(options.table)
+    .select('supporting_documents')
+    .eq('id', recordId)
+    .single()
+
+  if (recordError || !record) {
+    return Response.json({ ok: false, error: options.missingMessage }, { status: 404 })
+  }
+
+  const documents = Array.isArray(record.supporting_documents)
+    ? record.supporting_documents
+    : []
+
+  const belongsToRecord = documents.some(
+    (document: Record<string, unknown>) => document?.storage_path === storagePath,
+  )
+
+  if (!belongsToRecord) {
+    return Response.json(
+      { ok: false, error: 'Supporting document does not belong to this record.' },
+      { status: 403 },
+    )
+  }
+
+  const { data, error } = await ctx.supabaseAdmin.storage
+    .from(options.bucket)
+    .createSignedUrl(storagePath, 60)
+
+  if (error || !data?.signedUrl) {
+    console.error('Administrator signed URL error:', error)
+    return Response.json(
+      { ok: false, error: 'A secure document link could not be created.' },
+      { status: 500 },
+    )
+  }
+
+  return Response.json({
+    ok: true,
+    signedUrl: data.signedUrl,
+    expiresIn: 60,
+  })
 }
 
 export default {
@@ -57,128 +162,44 @@ export default {
         }
 
         if (body.action === 'list') {
-          const requestedOffset = Number(body.offset ?? 0)
-          const requestedLimit = Number(body.limit ?? 100)
-
-          const offset =
-            Number.isInteger(requestedOffset) && requestedOffset >= 0
-              ? requestedOffset
-              : 0
-
-          const limit =
-            Number.isInteger(requestedLimit) && requestedLimit > 0
-              ? Math.min(requestedLimit, MAX_PAGE_SIZE)
-              : 100
-
-          const { data, error, count } = await ctx.supabaseAdmin
-            .from('order_requests')
-            .select('*', { count: 'exact' })
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1)
-
-          if (error) {
-            console.error('Administrator order query failed:', error)
-            return Response.json(
-              { ok: false, error: 'Orders could not be loaded.' },
-              { status: 500 },
-            )
-          }
-
-          return Response.json({
-            ok: true,
-            orders: data ?? [],
-            total: count ?? data?.length ?? 0,
-          })
+          return listRecords(ctx, 'order_requests', 'orders', 'Orders could not be loaded.', body)
         }
 
         if (body.action === 'list-discussions') {
-          const requestedOffset = Number(body.offset ?? 0)
-          const requestedLimit = Number(body.limit ?? 100)
+          return listRecords(
+            ctx,
+            'project_discussions',
+            'discussions',
+            'Project discussions could not be loaded.',
+            body,
+          )
+        }
 
-          const offset =
-            Number.isInteger(requestedOffset) && requestedOffset >= 0
-              ? requestedOffset
-              : 0
-
-          const limit =
-            Number.isInteger(requestedLimit) && requestedLimit > 0
-              ? Math.min(requestedLimit, MAX_PAGE_SIZE)
-              : 100
-
-          const { data, error, count } = await ctx.supabaseAdmin
-            .from('project_discussions')
-            .select('*', { count: 'exact' })
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1)
-
-          if (error) {
-            console.error('Administrator discussion query failed:', error)
-            return Response.json(
-              { ok: false, error: 'Project discussions could not be loaded.' },
-              { status: 500 },
-            )
-          }
-
-          return Response.json({
-            ok: true,
-            discussions: data ?? [],
-            total: count ?? data?.length ?? 0,
-          })
+        if (body.action === 'list-quotes') {
+          return listRecords(
+            ctx,
+            'quote_requests',
+            'quotes',
+            'Quotation requests could not be loaded.',
+            body,
+          )
         }
 
         if (body.action === 'document-url') {
-          const orderId = body.orderId
-          const storagePath = body.storagePath
+          return createDocumentUrl(ctx, body, {
+            idField: 'orderId',
+            table: 'order_requests',
+            bucket: ORDER_BUCKET,
+            missingMessage: 'Order not found.',
+          })
+        }
 
-          if (!isUuid(orderId) || typeof storagePath !== 'string' || !storagePath.trim()) {
-            return Response.json(
-              { ok: false, error: 'Invalid supporting-document request.' },
-              { status: 400 },
-            )
-          }
-
-          const { data: order, error: orderError } = await ctx.supabaseAdmin
-            .from('order_requests')
-            .select('supporting_documents')
-            .eq('id', orderId)
-            .single()
-
-          if (orderError || !order) {
-            return Response.json({ ok: false, error: 'Order not found.' }, { status: 404 })
-          }
-
-          const documents = Array.isArray(order.supporting_documents)
-            ? order.supporting_documents
-            : []
-
-          const belongsToOrder = documents.some(
-            (document: Record<string, unknown>) =>
-              document?.storage_path === storagePath,
-          )
-
-          if (!belongsToOrder) {
-            return Response.json(
-              { ok: false, error: 'Supporting document does not belong to this order.' },
-              { status: 403 },
-            )
-          }
-
-          const { data, error } = await ctx.supabaseAdmin.storage
-            .from(BUCKET)
-            .createSignedUrl(storagePath, 60)
-
-          if (error || !data?.signedUrl) {
-            console.error('Administrator signed URL error:', error)
-            return Response.json(
-              { ok: false, error: 'A secure document link could not be created.' },
-              { status: 500 },
-            )
-          }
-
-          return Response.json({
-            ok: true,
-            signedUrl: data.signedUrl,
-            expiresIn: 60,
+        if (body.action === 'quote-document-url') {
+          return createDocumentUrl(ctx, body, {
+            idField: 'quoteId',
+            table: 'quote_requests',
+            bucket: QUOTE_BUCKET,
+            missingMessage: 'Quotation request not found.',
           })
         }
 
