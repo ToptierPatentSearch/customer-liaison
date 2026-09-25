@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -36,7 +36,7 @@ jobs:
 
       - name: Type-check changed Edge Functions
         run: |
-          deno check supabase/functions/submit-quote/index.ts
-          deno check supabase/functions/create-quote-upload-url/index.ts
-          deno check supabase/functions/submit-order/index.ts
-          deno check supabase/functions/admin-orders/index.ts
+          deno check --node-modules-dir=auto supabase/functions/submit-quote/index.ts
+          deno check --node-modules-dir=auto supabase/functions/create-quote-upload-url/index.ts
+          deno check --node-modules-dir=auto supabase/functions/submit-order/index.ts
+          deno check --node-modules-dir=auto supabase/functions/admin-orders/index.ts
