@@ -48,11 +48,7 @@ async function loadPaged(action, dataKey) {
 
   while (total === null || collected.length < total) {
     const { data, error } = await supabase.functions.invoke('admin-orders', {
-      body: {
-        action,
-        offset,
-        limit: PAGE_SIZE,
-      },
+      body: { action, offset, limit: PAGE_SIZE },
     })
 
     if (error) throw new Error(error.message)
@@ -68,9 +64,7 @@ async function loadPaged(action, dataKey) {
     if (items.length < PAGE_SIZE) break
     offset += items.length
 
-    if (offset > 10000) {
-      throw new Error('The administrator list is unusually large.')
-    }
+    if (offset > 10000) throw new Error('The administrator list is unusually large.')
   }
 
   return collected
@@ -79,6 +73,7 @@ async function loadPaged(action, dataKey) {
 export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
   const [activeTab, setActiveTab] = useState('discussions')
   const [orders, setOrders] = useState([])
+  const [quotes, setQuotes] = useState([])
   const [discussions, setDiscussions] = useState([])
   const [status, setStatus] = useState({ type: 'loading', message: 'Loading administrator data…' })
   const [query, setQuery] = useState('')
@@ -88,16 +83,21 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     setStatus({ type: 'loading', message: 'Loading administrator data…' })
 
     try {
-      const [loadedDiscussions, loadedOrders] = await Promise.all([
+      const [loadedDiscussions, loadedQuotes, loadedOrders] = await Promise.all([
         loadPaged('list-discussions', 'discussions'),
+        loadPaged('list-quotes', 'quotes'),
         loadPaged('list', 'orders'),
       ])
 
       setDiscussions(loadedDiscussions)
+      setQuotes(loadedQuotes)
       setOrders(loadedOrders)
       setStatus({
         type: 'success',
-        message: `${loadedDiscussions.length} discussion${loadedDiscussions.length === 1 ? '' : 's'} and ${loadedOrders.length} order${loadedOrders.length === 1 ? '' : 's'} loaded.`,
+        message:
+          `${loadedDiscussions.length} discussion${loadedDiscussions.length === 1 ? '' : 's'}, ` +
+          `${loadedQuotes.length} quote request${loadedQuotes.length === 1 ? '' : 's'}, and ` +
+          `${loadedOrders.length} search request${loadedOrders.length === 1 ? '' : 's'} loaded.`,
       })
     } catch (error) {
       setStatus({
@@ -136,6 +136,34 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     )
   }, [orders, query])
 
+  const filteredQuotes = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return quotes
+
+    return quotes.filter((quote) =>
+      [
+        quote.quote_reference,
+        quote.client_name,
+        quote.organization,
+        quote.email,
+        quote.country,
+        quote.search_service,
+        quote.technical_subject,
+        quote.project_description,
+        quote.search_objective,
+        quote.relevant_jurisdictions,
+        quote.known_patent_documents,
+        quote.known_competitors_or_assignees,
+        quote.preferred_deliverable,
+        quote.budget_considerations,
+        quote.additional_information,
+        quote.status,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle)),
+    )
+  }, [quotes, query])
+
   const filteredDiscussions = useMemo(() => {
     const needle = query.trim().toLowerCase()
     if (!needle) return discussions
@@ -159,20 +187,18 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     )
   }, [discussions, query])
 
-  async function openDocument(orderId, document) {
+  async function openDocument(recordType, recordId, document) {
     const storagePath = document?.storage_path
     if (!storagePath) return
 
     setOpeningDocument(storagePath)
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
-        body: {
-          action: 'document-url',
-          orderId,
-          storagePath,
-        },
-      })
+      const body = recordType === 'quote'
+        ? { action: 'quote-document-url', quoteId: recordId, storagePath }
+        : { action: 'document-url', orderId: recordId, storagePath }
+
+      const { data, error } = await supabase.functions.invoke('admin-orders', { body })
 
       if (error) throw new Error(error.message)
       if (!data?.ok || !data.signedUrl) {
@@ -190,13 +216,26 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     }
   }
 
-  const shownCount = activeTab === 'discussions'
-    ? filteredDiscussions.length
-    : filteredOrders.length
+  const filteredByTab = {
+    discussions: filteredDiscussions,
+    quotes: filteredQuotes,
+    orders: filteredOrders,
+  }
 
-  const totalCount = activeTab === 'discussions'
-    ? discussions.length
-    : orders.length
+  const totalsByTab = {
+    discussions: discussions,
+    quotes,
+    orders,
+  }
+
+  const shownCount = filteredByTab[activeTab]?.length ?? 0
+  const totalCount = totalsByTab[activeTab]?.length ?? 0
+  const searchLabel =
+    activeTab === 'discussions'
+      ? 'discussions'
+      : activeTab === 'quotes'
+        ? 'quote requests'
+        : 'search requests'
 
   return (
     <main className="page-shell admin-page-shell">
@@ -205,15 +244,11 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
           <div>
             <p className="eyebrow">Top-tier Patent Search</p>
             <h1 id="admin-title">Administrator</h1>
-            <p>Review project discussions and formal search requests from authenticated prospects.</p>
+            <p>Review project discussions, custom quotation requests, and formal search requests from authenticated prospects.</p>
           </div>
           <div className="admin-header-actions">
-            <button className="secondary-button" type="button" onClick={onBack}>
-              Client View
-            </button>
-            <button className="secondary-button" type="button" onClick={onSignOut}>
-              Sign out
-            </button>
+            <button className="secondary-button" type="button" onClick={onBack}>Client View</button>
+            <button className="secondary-button" type="button" onClick={onSignOut}>Sign out</button>
           </div>
         </header>
 
@@ -222,32 +257,19 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
             <strong>Administrator access</strong>
             <span>{adminEmail}</span>
           </div>
-          <button className="secondary-button" type="button" onClick={loadAll}>
-            Refresh
-          </button>
+          <button className="secondary-button" type="button" onClick={loadAll}>Refresh</button>
         </div>
 
         <div className="admin-tabs" role="tablist" aria-label="Administrator records">
-          <button
-            type="button"
-            className={activeTab === 'discussions' ? 'admin-tab active' : 'admin-tab'}
-            onClick={() => {
-              setActiveTab('discussions')
-              setQuery('')
-            }}
-          >
+          <AdminTab active={activeTab === 'discussions'} onClick={() => { setActiveTab('discussions'); setQuery('') }}>
             Discussions ({discussions.length})
-          </button>
-          <button
-            type="button"
-            className={activeTab === 'orders' ? 'admin-tab active' : 'admin-tab'}
-            onClick={() => {
-              setActiveTab('orders')
-              setQuery('')
-            }}
-          >
+          </AdminTab>
+          <AdminTab active={activeTab === 'quotes'} onClick={() => { setActiveTab('quotes'); setQuery('') }}>
+            Quote Requests ({quotes.length})
+          </AdminTab>
+          <AdminTab active={activeTab === 'orders'} onClick={() => { setActiveTab('orders'); setQuery('') }}>
             Search Requests ({orders.length})
-          </button>
+          </AdminTab>
         </div>
 
         <section className="admin-toolbar" aria-label="Administrator filters">
@@ -260,7 +282,7 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
             <span>Shown</span>
           </div>
           <label className="admin-search">
-            <span>Search {activeTab === 'discussions' ? 'discussions' : 'requests'}</span>
+            <span>Search {searchLabel}</span>
             <input
               type="search"
               value={query}
@@ -277,18 +299,37 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
           </div>
         )}
 
-        {activeTab === 'discussions' ? (
+        {activeTab === 'discussions' && (
           <DiscussionList discussions={filteredDiscussions} loading={status.type === 'loading'} />
-        ) : (
+        )}
+
+        {activeTab === 'quotes' && (
+          <QuoteList
+            quotes={filteredQuotes}
+            loading={status.type === 'loading'}
+            openingDocument={openingDocument}
+            onOpenDocument={(quoteId, document) => openDocument('quote', quoteId, document)}
+          />
+        )}
+
+        {activeTab === 'orders' && (
           <OrderList
             orders={filteredOrders}
             loading={status.type === 'loading'}
             openingDocument={openingDocument}
-            onOpenDocument={openDocument}
+            onOpenDocument={(orderId, document) => openDocument('order', orderId, document)}
           />
         )}
       </section>
     </main>
+  )
+}
+
+function AdminTab({ active, onClick, children }) {
+  return (
+    <button type="button" className={active ? 'admin-tab active' : 'admin-tab'} onClick={onClick}>
+      {children}
+    </button>
   )
 }
 
@@ -345,6 +386,78 @@ function DiscussionList({ discussions, loading }) {
   )
 }
 
+function QuoteList({ quotes, loading, openingDocument, onOpenDocument }) {
+  return (
+    <section className="admin-orders-list" aria-label="Custom quotation requests">
+      {!loading && quotes.length === 0 && (
+        <div className="admin-empty">No matching quotation requests were found.</div>
+      )}
+
+      {quotes.map((quote) => {
+        const documents = Array.isArray(quote.supporting_documents) ? quote.supporting_documents : []
+
+        return (
+          <details className="admin-order" key={quote.id}>
+            <summary>
+              <div className="admin-order-summary-main">
+                <span className="reference">{quote.quote_reference}</span>
+                <strong>{textOrDash(quote.client_name)}</strong>
+                <span>{textOrDash(quote.organization)}</span>
+              </div>
+              <div className="admin-order-summary-meta">
+                <span>{textOrDash(quote.search_service)}</span>
+                <span>{formatDateTime(quote.created_at)}</span>
+                <span className="admin-status-pill">{textOrDash(quote.status)}</span>
+              </div>
+            </summary>
+
+            <div className="admin-order-body">
+              <section>
+                <h2>Client</h2>
+                <dl>
+                  <Definition label="Quote reference" value={textOrDash(quote.quote_reference)} mono />
+                  <Definition label="Originating discussion ID" value={textOrDash(quote.discussion_id)} mono />
+                  <Definition label="Name" value={textOrDash(quote.client_name)} />
+                  <Definition label="Organization" value={textOrDash(quote.organization)} />
+                  <Definition label="Email" value={textOrDash(quote.email)} />
+                  <Definition label="Country" value={textOrDash(quote.country)} />
+                  <Definition label="Submitted" value={formatDateTime(quote.created_at)} />
+                  <Definition label="Status" value={textOrDash(quote.status)} />
+                </dl>
+              </section>
+
+              <section>
+                <h2>Quotation Scope</h2>
+                <dl>
+                  <Definition label="Requested service" value={textOrDash(quote.search_service)} />
+                  <Definition label="Technical subject" value={textOrDash(quote.technical_subject)} multiline />
+                  <Definition label="Project description" value={textOrDash(quote.project_description)} multiline />
+                  <Definition label="Search objective" value={textOrDash(quote.search_objective)} multiline />
+                  <Definition label="Jurisdictions" value={textOrDash(quote.relevant_jurisdictions)} multiline />
+                  <Definition label="Relevant dates" value={textOrDash(quote.relevant_dates)} multiline />
+                  <Definition label="Known patent documents" value={textOrDash(quote.known_patent_documents)} multiline />
+                  <Definition label="Known competitors / assignees" value={textOrDash(quote.known_competitors_or_assignees)} multiline />
+                  <Definition label="Desired completion date" value={formatDate(quote.desired_completion_date)} />
+                  <Definition label="Preferred deliverable" value={textOrDash(quote.preferred_deliverable)} />
+                  <Definition label="Budget considerations" value={textOrDash(quote.budget_considerations)} multiline />
+                  <Definition label="Additional information" value={textOrDash(quote.additional_information)} multiline />
+                </dl>
+              </section>
+
+              <DocumentList
+                documents={documents}
+                recordId={quote.id}
+                openingDocument={openingDocument}
+                onOpenDocument={onOpenDocument}
+              />
+            </div>
+          </details>
+        )
+      })}
+    </section>
+  )
+}
+
 function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
   return (
     <section className="admin-orders-list" aria-label="Search requests">
@@ -353,9 +466,7 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
       )}
 
       {orders.map((order) => {
-        const documents = Array.isArray(order.supporting_documents)
-          ? order.supporting_documents
-          : []
+        const documents = Array.isArray(order.supporting_documents) ? order.supporting_documents : []
 
         return (
           <details className="admin-order" key={order.id}>
@@ -378,6 +489,7 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
                 <dl>
                   <Definition label="Reference" value={textOrDash(order.order_reference)} mono />
                   <Definition label="Originating discussion ID" value={textOrDash(order.discussion_id)} mono />
+                  <Definition label="Originating quote ID" value={textOrDash(order.quote_id)} mono />
                   <Definition label="Name" value={textOrDash(order.client_name)} />
                   <Definition label="Organization" value={textOrDash(order.organization)} />
                   <Definition label="Email" value={textOrDash(order.email)} />
@@ -403,35 +515,46 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
                 </dl>
               </section>
 
-              <section>
-                <h2>Supporting Documents</h2>
-                {documents.length === 0 ? (
-                  <p className="admin-no-documents">No supporting documents were submitted.</p>
-                ) : (
-                  <div className="admin-documents">
-                    {documents.map((document, index) => (
-                      <div className="admin-document" key={document.storage_path || `${order.id}-${index}`}>
-                        <div>
-                          <strong>{textOrDash(document.original_name)}</strong>
-                          <span>{fileSize(document.size_bytes)}</span>
-                        </div>
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          disabled={openingDocument === document.storage_path}
-                          onClick={() => onOpenDocument(order.id, document)}
-                        >
-                          {openingDocument === document.storage_path ? 'Opening…' : 'Open Document'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+              <DocumentList
+                documents={documents}
+                recordId={order.id}
+                openingDocument={openingDocument}
+                onOpenDocument={onOpenDocument}
+              />
             </div>
           </details>
         )
       })}
+    </section>
+  )
+}
+
+function DocumentList({ documents, recordId, openingDocument, onOpenDocument }) {
+  return (
+    <section>
+      <h2>Supporting Documents</h2>
+      {documents.length === 0 ? (
+        <p className="admin-no-documents">No supporting documents were submitted.</p>
+      ) : (
+        <div className="admin-documents">
+          {documents.map((document, index) => (
+            <div className="admin-document" key={document.storage_path || `${recordId}-${index}`}>
+              <div>
+                <strong>{textOrDash(document.original_name)}</strong>
+                <span>{fileSize(document.size_bytes)}</span>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={openingDocument === document.storage_path}
+                onClick={() => onOpenDocument(recordId, document)}
+              >
+                {openingDocument === document.storage_path ? 'Opening…' : 'Open Document'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
