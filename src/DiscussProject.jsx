@@ -33,7 +33,7 @@ function validateDiscussionForm(form) {
   return ''
 }
 
-export default function DiscussProject({ session, onContinueToOrder }) {
+export default function DiscussProject({ session, onContinueToQuote, onContinueToOrder }) {
   const [form, setForm] = useState(initialForm)
   const [status, setStatus] = useState({ type: 'idle', message: '' })
   const [discussionReference, setDiscussionReference] = useState('')
@@ -133,15 +133,24 @@ export default function DiscussProject({ session, onContinueToOrder }) {
           {status.type === 'success' && submittedDiscussion && (
             <div className="discussion-next-step">
               <span>
-                If the project is sufficiently defined, continue to Request a Search. The core project information will be carried forward.
+                Continue to a custom quotation when scope is clear enough for pricing, or proceed directly to a formal Search Request when complete search instructions are already available.
               </span>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => onContinueToOrder(submittedDiscussion)}
-              >
-                Continue to Request a Search
-              </button>
+              <div className="next-step-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => onContinueToQuote(submittedDiscussion)}
+                >
+                  Continue to Request a Custom Quote
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => onContinueToOrder(submittedDiscussion)}
+                >
+                  Continue to Request a Search
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -301,7 +310,7 @@ export default function DiscussProject({ session, onContinueToOrder }) {
             {status.type === 'loading' ? 'Submitting…' : 'Submit Project Discussion'}
           </button>
           <p>
-            If the assignment is already well defined, use Request a Search instead for detailed search instructions and supporting documents.
+            If the assignment is sufficiently defined for pricing, use Request a Custom Quote. If complete search instructions are already available, use Request a Search.
           </p>
         </div>
       </form>

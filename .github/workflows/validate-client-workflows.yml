@@ -1,0 +1,42 @@
+name: Validate client workflows
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check changed Edge Functions
+        run: |
+          deno check --node-modules-dir=auto supabase/functions/submit-quote/index.ts
+          deno check --node-modules-dir=auto supabase/functions/create-quote-upload-url/index.ts
+          deno check --node-modules-dir=auto supabase/functions/submit-order/index.ts
+          deno check --node-modules-dir=auto supabase/functions/admin-orders/index.ts

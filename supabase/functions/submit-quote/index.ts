@@ -21,16 +21,9 @@ const DELIVERABLE_OPTIONS = new Set([
 const MAX_FILES = 8
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
-function makeOrderReference(orderId: string) {
-  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-  return `TPS-${date}-${orderId.slice(0, 8).toUpperCase()}`
-}
-
 function isUuid(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
+  return typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  )
 }
 
 function optionalUuid(value: unknown, fieldName: string) {
@@ -39,10 +32,13 @@ function optionalUuid(value: unknown, fieldName: string) {
   return value
 }
 
+function makeQuoteReference(quoteId: string) {
+  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
+  return `TPS-Q-${date}-${quoteId.slice(0, 8).toUpperCase()}`
+}
+
 function requiredText(value: unknown, fieldName: string, maximum: number) {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${fieldName} is required.`)
-  }
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${fieldName} is required.`)
   const text = value.trim()
   if (text.length > maximum) throw new Error(`${fieldName} is too long.`)
   return text
@@ -64,7 +60,7 @@ function validEmail(value: string) {
 function validIsoDate(value: unknown) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error('Requested completion date is invalid.')
+    throw new Error('Desired completion date is invalid.')
   }
   const [year, month, day] = value.split('-').map(Number)
   const candidate = new Date(Date.UTC(year, month - 1, day))
@@ -72,29 +68,22 @@ function validIsoDate(value: unknown) {
     candidate.getUTCFullYear() !== year ||
     candidate.getUTCMonth() !== month - 1 ||
     candidate.getUTCDate() !== day
-  ) {
-    throw new Error('Requested completion date is invalid.')
-  }
+  ) throw new Error('Desired completion date is invalid.')
   return value
 }
 
-function validateSupportingDocuments(value: unknown, orderId: string, userId: string) {
+function validateSupportingDocuments(value: unknown, quoteId: string, userId: string) {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw new Error('Supporting documents are invalid.')
-  if (value.length > MAX_FILES) {
-    throw new Error(`No more than ${MAX_FILES} supporting documents are permitted.`)
-  }
+  if (value.length > MAX_FILES) throw new Error(`No more than ${MAX_FILES} supporting documents are permitted.`)
 
   return value.map((document) => {
-    if (!document || typeof document !== 'object') {
-      throw new Error('Supporting-document information is invalid.')
-    }
-
+    if (!document || typeof document !== 'object') throw new Error('Supporting-document information is invalid.')
     const item = document as Record<string, unknown>
     const originalName = requiredText(item.original_name, 'Supporting-document name', 255)
     const storagePath = requiredText(item.storage_path, 'Supporting-document storage path', 1000)
 
-    if (!storagePath.startsWith(`${userId}/${orderId}/`)) {
+    if (!storagePath.startsWith(`${userId}/${quoteId}/`)) {
       throw new Error('Supporting-document storage path is invalid.')
     }
 
@@ -106,8 +95,7 @@ function validateSupportingDocuments(value: unknown, orderId: string, userId: st
     return {
       original_name: originalName,
       storage_path: storagePath,
-      content_type:
-        typeof item.content_type === 'string' ? item.content_type.slice(0, 200) : null,
+      content_type: typeof item.content_type === 'string' ? item.content_type.slice(0, 200) : null,
       size_bytes: sizeBytes,
     }
   })
@@ -123,7 +111,6 @@ export default {
 
       const authenticatedUserId = ctx.userClaims?.id
       const authenticatedEmail = ctx.userClaims?.email
-
       if (
         typeof authenticatedUserId !== 'string' ||
         !authenticatedUserId ||
@@ -141,14 +128,13 @@ export default {
       }
 
       if (typeof body.website === 'string' && body.website.trim() !== '') {
-        return Response.json({ ok: true, message: 'Order details received.' })
+        return Response.json({ ok: true, message: 'Quotation request received.' })
       }
 
       try {
-        const orderId = isUuid(body.orderId) ? body.orderId : crypto.randomUUID()
-        const orderReference = makeOrderReference(orderId)
+        const quoteId = isUuid(body.quoteId) ? body.quoteId : crypto.randomUUID()
+        const quoteReference = makeQuoteReference(quoteId)
         const discussionId = optionalUuid(body.discussionId, 'Originating discussion')
-        const quoteId = optionalUuid(body.quoteId, 'Originating quote request')
 
         if (discussionId) {
           const { data: discussion, error: discussionError } = await ctx.supabaseAdmin
@@ -157,30 +143,9 @@ export default {
             .eq('id', discussionId)
             .maybeSingle()
 
-          if (discussionError) {
-            console.error('Originating discussion lookup failed:', discussionError)
-            throw new Error('The originating project discussion could not be verified.')
-          }
-
+          if (discussionError) throw new Error('The originating project discussion could not be verified.')
           if (!discussion || discussion.user_id !== authenticatedUserId) {
             throw new Error('The originating project discussion does not belong to this account.')
-          }
-        }
-
-        if (quoteId) {
-          const { data: quote, error: quoteError } = await ctx.supabaseAdmin
-            .from('quote_requests')
-            .select('id, user_id')
-            .eq('id', quoteId)
-            .maybeSingle()
-
-          if (quoteError) {
-            console.error('Originating quote lookup failed:', quoteError)
-            throw new Error('The originating quotation request could not be verified.')
-          }
-
-          if (!quote || quote.user_id !== authenticatedUserId) {
-            throw new Error('The originating quotation request does not belong to this account.')
           }
         }
 
@@ -188,117 +153,94 @@ export default {
         const organization = optionalText(body.organization, 200)
         const email = authenticatedEmail.toLowerCase()
         const country = requiredText(body.country, 'Country', 120)
-        const billingOrganization = optionalText(body.billingOrganization, 200)
 
-        const searchService = requiredText(body.searchService, 'Search service', 200)
+        const searchService = requiredText(body.searchService, 'Requested service', 200)
         if (!SERVICE_OPTIONS.has(searchService)) throw new Error('Please select a valid search service.')
 
         const technicalSubject = requiredText(body.technicalSubject, 'Technical subject', 3000)
+        const projectDescription = optionalText(body.projectDescription, 5000)
         const searchObjective = requiredText(body.searchObjective, 'Search objective', 5000)
         const jurisdictions = requiredText(body.jurisdictions, 'Relevant jurisdictions', 1000)
         const relevantDates = optionalText(body.relevantDates, 1000)
         const knownPatentDocuments = optionalText(body.knownPatentDocuments, 5000)
         const knownCompetitors = optionalText(body.knownCompetitors, 3000)
-        const requestedCompletionDate = validIsoDate(body.requestedCompletionDate)
+        const desiredCompletionDate = validIsoDate(body.desiredCompletionDate)
 
         const preferredDeliverable = requiredText(body.preferredDeliverable, 'Preferred deliverable', 300)
         if (!DELIVERABLE_OPTIONS.has(preferredDeliverable)) {
           throw new Error('Please select a valid preferred deliverable.')
         }
 
-        const additionalInstructions = optionalText(body.additionalInstructions, 5000)
+        const budgetConsiderations = optionalText(body.budgetConsiderations, 2000)
+        const additionalInformation = optionalText(body.additionalInformation, 5000)
+
         if (body.acknowledgment !== true) {
-          throw new Error('The scope-review acknowledgment must be accepted.')
+          throw new Error('The quotation acknowledgment must be accepted.')
         }
 
-        const supportingDocuments = validateSupportingDocuments(body.supportingDocuments, orderId, authenticatedUserId)
+        const supportingDocuments = validateSupportingDocuments(
+          body.supportingDocuments,
+          quoteId,
+          authenticatedUserId,
+        )
 
-        const { error } = await ctx.supabaseAdmin.from('order_requests').insert({
-          id: orderId,
+        const { error } = await ctx.supabaseAdmin.from('quote_requests').insert({
+          id: quoteId,
           user_id: authenticatedUserId,
           discussion_id: discussionId,
-          quote_id: quoteId,
-          order_reference: orderReference,
+          quote_reference: quoteReference,
           client_name: clientName,
           organization,
           email,
           country,
-          billing_organization: billingOrganization,
           search_service: searchService,
           technical_subject: technicalSubject,
+          project_description: projectDescription,
           search_objective: searchObjective,
           relevant_jurisdictions: jurisdictions,
           relevant_dates: relevantDates,
           known_patent_documents: knownPatentDocuments,
           known_competitors_or_assignees: knownCompetitors,
-          requested_completion_date: requestedCompletionDate,
+          desired_completion_date: desiredCompletionDate,
           preferred_deliverable: preferredDeliverable,
-          additional_instructions: additionalInstructions,
+          budget_considerations: budgetConsiderations,
+          additional_information: additionalInformation,
           supporting_documents: supportingDocuments,
-          scope_review_acknowledged: true,
-          source: 'place-an-order-section-4',
+          quote_request_acknowledged: true,
+          source: 'request-custom-quote',
           status: 'submitted',
         })
 
         if (error) {
-          console.error('Database insert error:', error)
+          console.error('Quote database insert error:', error)
           if (error.code === '23505') {
-            return Response.json({ ok: false, error: 'This order has already been submitted.' }, { status: 409 })
+            return Response.json({ ok: false, error: 'This quotation request has already been submitted.' }, { status: 409 })
           }
-          return Response.json(
-            { ok: false, error: 'The order could not be recorded. Please try again.' },
-            { status: 500 },
-          )
+          return Response.json({ ok: false, error: 'The quotation request could not be recorded. Please try again.' }, { status: 500 })
         }
 
         if (discussionId) {
           const { error: discussionUpdateError } = await ctx.supabaseAdmin
             .from('project_discussions')
-            .update({
-              status: 'converted',
-              updated_at: new Date().toISOString(),
-            })
+            .update({ status: 'quote_requested', updated_at: new Date().toISOString() })
             .eq('id', discussionId)
             .eq('user_id', authenticatedUserId)
 
-          if (discussionUpdateError) {
-            console.error('Discussion conversion status update failed:', discussionUpdateError)
-          }
+          if (discussionUpdateError) console.error('Discussion quote status update failed:', discussionUpdateError)
         }
 
-        if (quoteId) {
-          const { error: quoteUpdateError } = await ctx.supabaseAdmin
-            .from('quote_requests')
-            .update({
-              status: 'converted',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', quoteId)
-            .eq('user_id', authenticatedUserId)
-
-          if (quoteUpdateError) {
-            console.error('Quote conversion status update failed:', quoteUpdateError)
-          }
-        }
-
-        return Response.json(
-          {
-            ok: true,
-            message: 'Your order details were submitted for initial scope review.',
-            orderId,
-            orderReference,
-          },
-          { status: 201 },
-        )
+        return Response.json({
+          ok: true,
+          message: 'Your custom quotation request was submitted for review.',
+          quoteId,
+          quoteReference,
+        }, { status: 201 })
       } catch (error) {
-        console.error('Validation error:', error)
-        return Response.json(
-          {
-            ok: false,
-            error: error instanceof Error ? error.message : 'Invalid order information.',
-          },
-          { status: 400 },
-        )
+        console.error('Quote validation error:', error)
+        return Response.json({
+          ok: false,
+          error: error instanceof Error ? error.message : 'Invalid quotation request.',
+        }, { status: 400 })
       }
     },
   ),
