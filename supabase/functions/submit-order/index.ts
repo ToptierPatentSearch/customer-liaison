@@ -148,6 +148,7 @@ export default {
         const orderId = isUuid(body.orderId) ? body.orderId : crypto.randomUUID()
         const orderReference = makeOrderReference(orderId)
         const discussionId = optionalUuid(body.discussionId, 'Originating discussion')
+        const quoteId = optionalUuid(body.quoteId, 'Originating quote request')
 
         if (discussionId) {
           const { data: discussion, error: discussionError } = await ctx.supabaseAdmin
@@ -163,6 +164,23 @@ export default {
 
           if (!discussion || discussion.user_id !== authenticatedUserId) {
             throw new Error('The originating project discussion does not belong to this account.')
+          }
+        }
+
+        if (quoteId) {
+          const { data: quote, error: quoteError } = await ctx.supabaseAdmin
+            .from('quote_requests')
+            .select('id, user_id')
+            .eq('id', quoteId)
+            .maybeSingle()
+
+          if (quoteError) {
+            console.error('Originating quote lookup failed:', quoteError)
+            throw new Error('The originating quotation request could not be verified.')
+          }
+
+          if (!quote || quote.user_id !== authenticatedUserId) {
+            throw new Error('The originating quotation request does not belong to this account.')
           }
         }
 
@@ -199,6 +217,7 @@ export default {
           id: orderId,
           user_id: authenticatedUserId,
           discussion_id: discussionId,
+          quote_id: quoteId,
           order_reference: orderReference,
           client_name: clientName,
           organization,
@@ -244,6 +263,21 @@ export default {
 
           if (discussionUpdateError) {
             console.error('Discussion conversion status update failed:', discussionUpdateError)
+          }
+        }
+
+        if (quoteId) {
+          const { error: quoteUpdateError } = await ctx.supabaseAdmin
+            .from('quote_requests')
+            .update({
+              status: 'converted',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', quoteId)
+            .eq('user_id', authenticatedUserId)
+
+          if (quoteUpdateError) {
+            console.error('Quote conversion status update failed:', quoteUpdateError)
           }
         }
 
