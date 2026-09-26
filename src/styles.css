@@ -750,3 +750,79 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Administrator customer-visible status controls */
+.admin-action-status {
+  margin-top: 18px;
+}
+
+.admin-status-editor {
+  padding: 16px 18px;
+  border: 1px solid #d8e2ec;
+  border-left: 4px solid #526f92;
+  border-radius: 10px;
+  background: #f7fafc;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, auto);
+  gap: 20px;
+  align-items: end;
+}
+
+.admin-status-editor > div:first-child {
+  min-width: 0;
+}
+
+.admin-status-editor h2 {
+  margin-bottom: 6px;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.admin-status-editor p {
+  margin: 0;
+  color: #667789;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.admin-status-controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.admin-status-controls label {
+  min-width: 230px;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-status-controls label > span {
+  color: #425872;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.admin-status-save {
+  min-width: 130px;
+}
+
+@media (max-width: 820px) {
+  .admin-status-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-status-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-status-controls label {
+    min-width: 0;
+  }
+
+  .admin-status-save {
+    width: 100%;
+  }
+}
