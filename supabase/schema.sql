@@ -8,6 +8,7 @@ create table if not exists public.order_requests (
   user_id uuid references auth.users(id) on delete set null,
   order_reference text not null unique,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   client_name text not null,
   organization text,
   email text not null,
@@ -31,6 +32,19 @@ create table if not exists public.order_requests (
 
 alter table public.order_requests
   add column if not exists user_id uuid references auth.users(id) on delete set null;
+
+alter table public.order_requests
+  add column if not exists updated_at timestamptz;
+
+update public.order_requests
+set updated_at = created_at
+where updated_at is null;
+
+alter table public.order_requests
+  alter column updated_at set default now();
+
+alter table public.order_requests
+  alter column updated_at set not null;
 
 create index if not exists order_requests_user_id_idx
   on public.order_requests (user_id);
