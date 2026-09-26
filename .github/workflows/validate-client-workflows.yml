@@ -40,3 +40,4 @@ jobs:
           deno check --node-modules-dir=auto supabase/functions/create-quote-upload-url/index.ts
           deno check --node-modules-dir=auto supabase/functions/submit-order/index.ts
           deno check --node-modules-dir=auto supabase/functions/admin-orders/index.ts
+          deno check --node-modules-dir=auto supabase/functions/my-requests/index.ts

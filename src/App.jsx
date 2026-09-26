@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminDashboard from './AdminDashboard.jsx'
 import DiscussProject from './DiscussProject.jsx'
 import QuoteRequest from './QuoteRequest.jsx'
+import MyRequests from './MyRequests.jsx'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -139,6 +140,7 @@ export default function App() {
     if (requestedView === 'admin') return 'admin'
     if (requestedView === 'discuss') return 'discuss'
     if (requestedView === 'quote') return 'quote'
+    if (requestedView === 'requests') return 'requests'
     return 'order'
   })
 
@@ -222,7 +224,7 @@ export default function App() {
     setView(nextView)
     const url = new URL(window.location.href)
 
-    if (nextView === 'admin' || nextView === 'discuss' || nextView === 'quote') {
+    if (nextView === 'admin' || nextView === 'discuss' || nextView === 'quote' || nextView === 'requests') {
       url.searchParams.set('view', nextView)
     } else {
       url.searchParams.delete('view')
@@ -691,6 +693,9 @@ export default function App() {
               <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
                 Request a Search
               </button>
+              <button className="secondary-button" type="button" onClick={() => navigateView('requests')}>
+                My Requests
+              </button>
               {adminAccess.checked && adminAccess.isAdmin && (
                 <button
                   className="secondary-button"
@@ -711,6 +716,60 @@ export default function App() {
             onContinueToQuote={handleContinueToQuote}
             onContinueToOrder={handleContinueToOrder}
           />
+        </section>
+      </main>
+    )
+  }
+
+  if (view === 'requests') {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="my-requests-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="my-requests-title">My Requests</h1>
+            <p>
+              Review the current status and history of project discussions, quotation requests, and search requests submitted from this account.
+            </p>
+          </header>
+
+          <div className="account-bar">
+            <div>
+              <strong>Signed in</strong>
+              <span>{session.user.email}</span>
+            </div>
+            <div className="account-actions">
+              <button className="secondary-button" type="button" onClick={() => navigateView('discuss')}>
+                Discuss a Project
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setQuoteSeed({})
+                  navigateView('quote')
+                }}
+              >
+                Request a Custom Quote
+              </button>
+              <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
+                Request a Search
+              </button>
+              <button className="secondary-button active-workflow-button" type="button" disabled>
+                My Requests
+              </button>
+              {adminAccess.checked && adminAccess.isAdmin && (
+                <button className="secondary-button" type="button" onClick={() => navigateView('admin')}>
+                  Administrator
+                </button>
+              )}
+              <button className="secondary-button" type="button" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <MyRequests />
         </section>
       </main>
     )
@@ -740,6 +799,9 @@ export default function App() {
               </button>
               <button className="secondary-button" type="button" onClick={() => navigateView('order')}>
                 Request a Search
+              </button>
+              <button className="secondary-button" type="button" onClick={() => navigateView('requests')}>
+                My Requests
               </button>
               {adminAccess.checked && adminAccess.isAdmin && (
                 <button className="secondary-button" type="button" onClick={() => navigateView('admin')}>
@@ -792,6 +854,9 @@ export default function App() {
             </button>
             <button className="secondary-button active-workflow-button" type="button" disabled>
               Request a Search
+            </button>
+            <button className="secondary-button" type="button" onClick={() => navigateView('requests')}>
+              My Requests
             </button>
             {adminAccess.checked && adminAccess.isAdmin && (
               <button
