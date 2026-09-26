@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminDashboard from './AdminDashboard.jsx'
 import DiscussProject from './DiscussProject.jsx'
 import QuoteRequest from './QuoteRequest.jsx'
+import MyRequests from './MyRequests.jsx'
 import { supabase } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
@@ -139,6 +140,7 @@ export default function App() {
     if (requestedView === 'admin') return 'admin'
     if (requestedView === 'discuss') return 'discuss'
     if (requestedView === 'quote') return 'quote'
+    if (requestedView === 'requests') return 'requests'
     return 'order'
   })
 
