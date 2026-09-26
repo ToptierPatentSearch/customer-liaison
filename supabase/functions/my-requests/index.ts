@@ -129,7 +129,7 @@ export default {
           summary: textOrNull(item.search_objective),
           status: textOrNull(item.status),
           createdAt: textOrNull(item.created_at),
-          updatedAt: textOrNull(item.updated_at),
+          updatedAt: textOrNull(item.created_at),
           requestedCompletionDate: textOrNull(item.requested_completion_date),
         }))
 
