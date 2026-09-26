@@ -58,7 +58,7 @@ export default {
           ctx.supabaseAdmin
             .from('order_requests')
             .select(
-              'id, order_reference, search_service, technical_subject, search_objective, status, created_at, requested_completion_date',
+              'id, order_reference, search_service, technical_subject, search_objective, status, created_at, updated_at, requested_completion_date',
             )
             .eq('user_id', userId)
             .order('created_at', { ascending: false }),
@@ -129,7 +129,7 @@ export default {
           summary: textOrNull(item.search_objective),
           status: textOrNull(item.status),
           createdAt: textOrNull(item.created_at),
-          updatedAt: textOrNull(item.created_at),
+          updatedAt: textOrNull(item.updated_at),
           requestedCompletionDate: textOrNull(item.requested_completion_date),
         }))
 

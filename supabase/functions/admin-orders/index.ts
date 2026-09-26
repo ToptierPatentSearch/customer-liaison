@@ -4,6 +4,42 @@ const ORDER_BUCKET = 'order-supporting-documents'
 const QUOTE_BUCKET = 'quote-supporting-documents'
 const MAX_PAGE_SIZE = 200
 
+const STATUS_OPTIONS: Record<string, Set<string>> = {
+  discussion: new Set([
+    'new',
+    'reviewing',
+    'clarification_required',
+    'quote_requested',
+    'converted',
+    'closed',
+  ]),
+  quote: new Set([
+    'submitted',
+    'reviewing',
+    'clarification_required',
+    'quote_sent',
+    'accepted',
+    'converted',
+    'closed',
+  ]),
+  order: new Set([
+    'submitted',
+    'reviewing',
+    'clarification_required',
+    'scope_confirmed',
+    'search_in_progress',
+    'report_delivered',
+    'completed',
+    'closed',
+  ]),
+}
+
+const RECORD_CONFIG: Record<string, { table: string; label: string }> = {
+  discussion: { table: 'project_discussions', label: 'Project discussion' },
+  quote: { table: 'quote_requests', label: 'Quotation request' },
+  order: { table: 'order_requests', label: 'Search request' },
+}
+
 function isUuid(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -130,6 +166,58 @@ async function createDocumentUrl(
   })
 }
 
+async function updateRecordStatus(
+  ctx: any,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = body.recordId
+  const nextStatus = typeof body.status === 'string' ? body.status.trim() : ''
+
+  const config = RECORD_CONFIG[recordType]
+  const allowedStatuses = STATUS_OPTIONS[recordType]
+
+  if (!config || !allowedStatuses || !isUuid(recordId) || !allowedStatuses.has(nextStatus)) {
+    return Response.json(
+      { ok: false, error: 'Invalid status update request.' },
+      { status: 400 },
+    )
+  }
+
+  const updatedAt = new Date().toISOString()
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from(config.table)
+    .update({
+      status: nextStatus,
+      updated_at: updatedAt,
+    })
+    .eq('id', recordId)
+    .select('id, status, updated_at')
+    .maybeSingle()
+
+  if (error) {
+    console.error(`Administrator ${config.table} status update failed:`, error)
+    return Response.json(
+      { ok: false, error: `${config.label} status could not be updated.` },
+      { status: 500 },
+    )
+  }
+
+  if (!data) {
+    return Response.json(
+      { ok: false, error: `${config.label} was not found.` },
+      { status: 404 },
+    )
+  }
+
+  return Response.json({
+    ok: true,
+    recordType,
+    record: data,
+  })
+}
+
 export default {
   fetch: withSupabase(
     { auth: 'user' },
@@ -159,6 +247,10 @@ export default {
 
         if (!administrator) {
           return Response.json({ ok: false, error: 'Administrator access is required.' }, { status: 403 })
+        }
+
+        if (body.action === 'update-status') {
+          return updateRecordStatus(ctx, body)
         }
 
         if (body.action === 'list') {
