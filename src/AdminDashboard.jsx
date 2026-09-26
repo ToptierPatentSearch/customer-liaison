@@ -3,6 +3,47 @@ import { supabase } from './lib/supabaseClient'
 
 const PAGE_SIZE = 100
 
+const STATUS_OPTIONS = {
+  discussion: [
+    ['new', 'Received'],
+    ['reviewing', 'Under Review'],
+    ['clarification_required', 'Information Required'],
+    ['quote_requested', 'Quote Requested'],
+    ['converted', 'Continued to Next Stage'],
+    ['closed', 'Closed'],
+  ],
+  quote: [
+    ['submitted', 'Submitted'],
+    ['reviewing', 'Under Review'],
+    ['clarification_required', 'Information Required'],
+    ['quote_sent', 'Quote Sent'],
+    ['accepted', 'Accepted'],
+    ['converted', 'Continued to Next Stage'],
+    ['closed', 'Closed'],
+  ],
+  order: [
+    ['submitted', 'Submitted'],
+    ['reviewing', 'Under Review'],
+    ['clarification_required', 'Information Required'],
+    ['scope_confirmed', 'Scope Confirmed'],
+    ['search_in_progress', 'Search in Progress'],
+    ['report_delivered', 'Report Delivered'],
+    ['completed', 'Completed'],
+    ['closed', 'Closed'],
+  ],
+}
+
+const STATUS_LABELS = Object.fromEntries(
+  Object.values(STATUS_OPTIONS).flat().map(([value, label]) => [value, label]),
+)
+
+function statusLabel(value) {
+  if (typeof value !== 'string' || !value.trim()) return '—'
+  return STATUS_LABELS[value] || value
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 function formatDateTime(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -78,6 +119,8 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
   const [status, setStatus] = useState({ type: 'loading', message: 'Loading administrator data…' })
   const [query, setQuery] = useState('')
   const [openingDocument, setOpeningDocument] = useState('')
+  const [updatingStatus, setUpdatingStatus] = useState('')
+  const [actionStatus, setActionStatus] = useState({ type: 'idle', message: '' })
 
   async function loadAll() {
     setStatus({ type: 'loading', message: 'Loading administrator data…' })
@@ -216,6 +259,55 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     }
   }
 
+  async function updateRequestStatus(recordType, recordId, nextStatus) {
+    const updateKey = `${recordType}:${recordId}`
+    setUpdatingStatus(updateKey)
+    setActionStatus({ type: 'loading', message: 'Updating customer-visible status…' })
+
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: {
+          action: 'update-status',
+          recordType,
+          recordId,
+          status: nextStatus,
+        },
+      })
+
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !data.record) {
+        throw new Error(data?.error || 'The status could not be updated.')
+      }
+
+      const applyUpdate = (records) =>
+        records.map((record) =>
+          record.id === recordId
+            ? {
+                ...record,
+                status: data.record.status,
+                updated_at: data.record.updated_at,
+              }
+            : record,
+        )
+
+      if (recordType === 'discussion') setDiscussions(applyUpdate)
+      if (recordType === 'quote') setQuotes(applyUpdate)
+      if (recordType === 'order') setOrders(applyUpdate)
+
+      setActionStatus({
+        type: 'success',
+        message: `Status updated to “${statusLabel(data.record.status)}”. The customer can now see this status in My Requests.`,
+      })
+    } catch (error) {
+      setActionStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'The status could not be updated.',
+      })
+    } finally {
+      setUpdatingStatus('')
+    }
+  }
+
   const filteredByTab = {
     discussions: filteredDiscussions,
     quotes: filteredQuotes,
@@ -299,8 +391,29 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
           </div>
         )}
 
+        {actionStatus.type !== 'idle' && (
+          <div
+            className={`status admin-status admin-action-status status-${actionStatus.type}`}
+            role={actionStatus.type === 'error' ? 'alert' : 'status'}
+          >
+            <strong>
+              {actionStatus.type === 'success'
+                ? 'Customer status updated'
+                : actionStatus.type === 'error'
+                  ? 'Status update failed'
+                  : 'Updating status'}
+            </strong>
+            <span>{actionStatus.message}</span>
+          </div>
+        )}
+
         {activeTab === 'discussions' && (
-          <DiscussionList discussions={filteredDiscussions} loading={status.type === 'loading'} />
+          <DiscussionList
+            discussions={filteredDiscussions}
+            loading={status.type === 'loading'}
+            updatingStatus={updatingStatus}
+            onStatusChange={updateRequestStatus}
+          />
         )}
 
         {activeTab === 'quotes' && (
@@ -309,6 +422,8 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
             loading={status.type === 'loading'}
             openingDocument={openingDocument}
             onOpenDocument={(quoteId, document) => openDocument('quote', quoteId, document)}
+            updatingStatus={updatingStatus}
+            onStatusChange={updateRequestStatus}
           />
         )}
 
@@ -318,6 +433,8 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
             loading={status.type === 'loading'}
             openingDocument={openingDocument}
             onOpenDocument={(orderId, document) => openDocument('order', orderId, document)}
+            updatingStatus={updatingStatus}
+            onStatusChange={updateRequestStatus}
           />
         )}
       </section>
@@ -333,7 +450,58 @@ function AdminTab({ active, onClick, children }) {
   )
 }
 
-function DiscussionList({ discussions, loading }) {
+function StatusEditor({
+  recordType,
+  recordId,
+  currentStatus,
+  updating,
+  onStatusChange,
+}) {
+  const options = STATUS_OPTIONS[recordType] ?? []
+  const fallback = options[0]?.[0] ?? ''
+  const [selectedStatus, setSelectedStatus] = useState(currentStatus || fallback)
+
+  useEffect(() => {
+    setSelectedStatus(currentStatus || fallback)
+  }, [currentStatus, fallback])
+
+  const hasChange = Boolean(selectedStatus) && selectedStatus !== currentStatus
+
+  return (
+    <section className="admin-status-editor" aria-label="Customer-visible status">
+      <div>
+        <h2>Customer-visible Status</h2>
+        <p>
+          This status is shown to the signed-in customer in My Requests.
+        </p>
+      </div>
+      <div className="admin-status-controls">
+        <label>
+          <span>Status</span>
+          <select
+            value={selectedStatus}
+            onChange={(event) => setSelectedStatus(event.target.value)}
+            disabled={updating}
+          >
+            {options.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="primary-button admin-status-save"
+          type="button"
+          disabled={!hasChange || updating}
+          onClick={() => onStatusChange(recordType, recordId, selectedStatus)}
+        >
+          {updating ? 'Updating…' : 'Update Status'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function DiscussionList({ discussions, loading, updatingStatus, onStatusChange }) {
   return (
     <section className="admin-orders-list" aria-label="Project discussions">
       {!loading && discussions.length === 0 && (
@@ -351,11 +519,19 @@ function DiscussionList({ discussions, loading }) {
             <div className="admin-order-summary-meta">
               <span>{textOrDash(discussion.project_type)}</span>
               <span>{formatDateTime(discussion.created_at)}</span>
-              <span className="admin-status-pill">{textOrDash(discussion.status)}</span>
+              <span className="admin-status-pill">{statusLabel(discussion.status)}</span>
             </div>
           </summary>
 
           <div className="admin-order-body">
+            <StatusEditor
+              recordType="discussion"
+              recordId={discussion.id}
+              currentStatus={discussion.status}
+              updating={updatingStatus === `discussion:${discussion.id}`}
+              onStatusChange={onStatusChange}
+            />
+
             <section>
               <h2>Client</h2>
               <dl>
@@ -364,7 +540,8 @@ function DiscussionList({ discussions, loading }) {
                 <Definition label="Organization" value={textOrDash(discussion.organization)} />
                 <Definition label="Email" value={textOrDash(discussion.email)} />
                 <Definition label="Submitted" value={formatDateTime(discussion.created_at)} />
-                <Definition label="Status" value={textOrDash(discussion.status)} />
+                <Definition label="Last updated" value={formatDateTime(discussion.updated_at)} />
+                <Definition label="Status" value={statusLabel(discussion.status)} />
               </dl>
             </section>
 
@@ -386,7 +563,7 @@ function DiscussionList({ discussions, loading }) {
   )
 }
 
-function QuoteList({ quotes, loading, openingDocument, onOpenDocument }) {
+function QuoteList({ quotes, loading, openingDocument, onOpenDocument, updatingStatus, onStatusChange }) {
   return (
     <section className="admin-orders-list" aria-label="Custom quotation requests">
       {!loading && quotes.length === 0 && (
@@ -407,11 +584,19 @@ function QuoteList({ quotes, loading, openingDocument, onOpenDocument }) {
               <div className="admin-order-summary-meta">
                 <span>{textOrDash(quote.search_service)}</span>
                 <span>{formatDateTime(quote.created_at)}</span>
-                <span className="admin-status-pill">{textOrDash(quote.status)}</span>
+                <span className="admin-status-pill">{statusLabel(quote.status)}</span>
               </div>
             </summary>
 
             <div className="admin-order-body">
+              <StatusEditor
+                recordType="quote"
+                recordId={quote.id}
+                currentStatus={quote.status}
+                updating={updatingStatus === `quote:${quote.id}`}
+                onStatusChange={onStatusChange}
+              />
+
               <section>
                 <h2>Client</h2>
                 <dl>
@@ -422,7 +607,8 @@ function QuoteList({ quotes, loading, openingDocument, onOpenDocument }) {
                   <Definition label="Email" value={textOrDash(quote.email)} />
                   <Definition label="Country" value={textOrDash(quote.country)} />
                   <Definition label="Submitted" value={formatDateTime(quote.created_at)} />
-                  <Definition label="Status" value={textOrDash(quote.status)} />
+                  <Definition label="Last updated" value={formatDateTime(quote.updated_at)} />
+                  <Definition label="Status" value={statusLabel(quote.status)} />
                 </dl>
               </section>
 
@@ -458,7 +644,7 @@ function QuoteList({ quotes, loading, openingDocument, onOpenDocument }) {
   )
 }
 
-function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
+function OrderList({ orders, loading, openingDocument, onOpenDocument, updatingStatus, onStatusChange }) {
   return (
     <section className="admin-orders-list" aria-label="Search requests">
       {!loading && orders.length === 0 && (
@@ -479,11 +665,19 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
               <div className="admin-order-summary-meta">
                 <span>{textOrDash(order.search_service)}</span>
                 <span>{formatDateTime(order.created_at)}</span>
-                <span className="admin-status-pill">{textOrDash(order.status)}</span>
+                <span className="admin-status-pill">{statusLabel(order.status)}</span>
               </div>
             </summary>
 
             <div className="admin-order-body">
+              <StatusEditor
+                recordType="order"
+                recordId={order.id}
+                currentStatus={order.status}
+                updating={updatingStatus === `order:${order.id}`}
+                onStatusChange={onStatusChange}
+              />
+
               <section>
                 <h2>Client</h2>
                 <dl>
@@ -496,6 +690,8 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument }) {
                   <Definition label="Country" value={textOrDash(order.country)} />
                   <Definition label="Billing organization" value={textOrDash(order.billing_organization)} />
                   <Definition label="Submitted" value={formatDateTime(order.created_at)} />
+                  <Definition label="Last updated" value={formatDateTime(order.updated_at)} />
+                  <Definition label="Status" value={statusLabel(order.status)} />
                 </dl>
               </section>
 
