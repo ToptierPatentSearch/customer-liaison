@@ -378,7 +378,7 @@ export default function QuoteRequest({ session, initialData = {}, onContinueToOr
           <div className="file-field">
             <input
               id="quoteSupportingDocuments"
-              className="file-input"
+              className="file-input-hidden"
               type="file"
               multiple
               onChange={handleFiles}
