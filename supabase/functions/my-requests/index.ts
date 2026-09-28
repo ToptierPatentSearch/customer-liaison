@@ -7,6 +7,14 @@ type ReplyRecord = {
   createdAt: string | null
 }
 
+type StatusHistoryRecord = {
+  id: string
+  fromStatus: string | null
+  toStatus: string
+  statusVersion: number
+  changedAt: string | null
+}
+
 type RequestRecord = {
   id: string
   type: 'discussion' | 'quote' | 'search'
@@ -16,6 +24,11 @@ type RequestRecord = {
   service: string | null
   summary: string | null
   status: string | null
+  statusUpdatedAt: string | null
+  statusVersion: number
+  seenStatusVersion: number
+  hasStatusUpdate: boolean
+  statusHistory: StatusHistoryRecord[]
   createdAt: string | null
   updatedAt: string | null
   requestedCompletionDate: string | null
@@ -24,6 +37,11 @@ type RequestRecord = {
 
 function textOrNull(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function integerOrDefault(value: unknown, fallback = 1) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : fallback
 }
 
 function isUuid(value: unknown): value is string {
@@ -109,6 +127,63 @@ async function sendClientReply(
   })
 }
 
+async function markStatusSeen(
+  ctx: any,
+  userId: string,
+  body: Record<string, unknown>,
+) {
+  const requestType = typeof body.requestType === 'string' ? body.requestType : ''
+  const requestId = typeof body.requestId === 'string' ? body.requestId : ''
+  const config = REQUEST_CONFIG[requestType as keyof typeof REQUEST_CONFIG]
+
+  if (!config || !isUuid(requestId)) {
+    return Response.json({ ok: false, error: 'Invalid request.' }, { status: 400 })
+  }
+
+  const { data: requestRecord, error: requestError } = await ctx.supabaseAdmin
+    .from(config.table)
+    .select('id, status_version')
+    .eq('id', requestId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (requestError) {
+    console.error('Status seen ownership lookup failed:', requestError)
+    return Response.json({ ok: false, error: 'Request could not be verified.' }, { status: 500 })
+  }
+
+  if (!requestRecord) {
+    return Response.json({ ok: false, error: 'Request was not found.' }, { status: 404 })
+  }
+
+  const seenStatusVersion = integerOrDefault(requestRecord.status_version)
+  const seenAt = new Date().toISOString()
+
+  const { error: viewError } = await ctx.supabaseAdmin
+    .from('request_status_views')
+    .upsert(
+      {
+        request_id: requestId,
+        request_type: requestType,
+        user_id: userId,
+        seen_status_version: seenStatusVersion,
+        seen_at: seenAt,
+      },
+      { onConflict: 'request_type,request_id,user_id' },
+    )
+
+  if (viewError) {
+    console.error('Status seen update failed:', viewError)
+    return Response.json({ ok: false, error: 'Status update could not be marked as viewed.' }, { status: 500 })
+  }
+
+  return Response.json({
+    ok: true,
+    seenStatusVersion,
+    seenAt,
+  })
+}
+
 export default {
   fetch: withSupabase(
     { auth: 'user' },
@@ -140,11 +215,15 @@ export default {
           return sendClientReply(ctx, userId, body)
         }
 
+        if (body.action === 'mark-status-seen') {
+          return markStatusSeen(ctx, userId, body)
+        }
+
         const [discussionsResult, quotesResult, ordersResult] = await Promise.all([
           ctx.supabaseAdmin
             .from('project_discussions')
             .select(
-              'id, discussion_reference, project_type, objective, technology_description, status, created_at, updated_at',
+              'id, discussion_reference, project_type, objective, technology_description, status, status_updated_at, status_version, created_at, updated_at',
             )
             .eq('user_id', userId)
             .order('created_at', { ascending: false }),
@@ -152,7 +231,7 @@ export default {
           ctx.supabaseAdmin
             .from('quote_requests')
             .select(
-              'id, quote_reference, search_service, technical_subject, search_objective, status, created_at, updated_at, desired_completion_date',
+              'id, quote_reference, search_service, technical_subject, search_objective, status, status_updated_at, status_version, created_at, updated_at, desired_completion_date',
             )
             .eq('user_id', userId)
             .order('created_at', { ascending: false }),
@@ -160,7 +239,7 @@ export default {
           ctx.supabaseAdmin
             .from('order_requests')
             .select(
-              'id, order_reference, search_service, technical_subject, search_objective, status, created_at, updated_at, requested_completion_date',
+              'id, order_reference, search_service, technical_subject, search_objective, status, status_updated_at, status_version, created_at, updated_at, requested_completion_date',
             )
             .eq('user_id', userId)
             .order('created_at', { ascending: false }),
@@ -196,6 +275,11 @@ export default {
           service: textOrNull(item.project_type),
           summary: textOrNull(item.objective),
           status: textOrNull(item.status),
+          statusUpdatedAt: textOrNull(item.status_updated_at),
+          statusVersion: integerOrDefault(item.status_version),
+          seenStatusVersion: 1,
+          hasStatusUpdate: false,
+          statusHistory: [],
           createdAt: textOrNull(item.created_at),
           updatedAt: textOrNull(item.updated_at),
           requestedCompletionDate: null,
@@ -214,6 +298,11 @@ export default {
           service: textOrNull(item.search_service),
           summary: textOrNull(item.search_objective),
           status: textOrNull(item.status),
+          statusUpdatedAt: textOrNull(item.status_updated_at),
+          statusVersion: integerOrDefault(item.status_version),
+          seenStatusVersion: 1,
+          hasStatusUpdate: false,
+          statusHistory: [],
           createdAt: textOrNull(item.created_at),
           updatedAt: textOrNull(item.updated_at),
           requestedCompletionDate: textOrNull(item.desired_completion_date),
@@ -232,6 +321,11 @@ export default {
           service: textOrNull(item.search_service),
           summary: textOrNull(item.search_objective),
           status: textOrNull(item.status),
+          statusUpdatedAt: textOrNull(item.status_updated_at),
+          statusVersion: integerOrDefault(item.status_version),
+          seenStatusVersion: 1,
+          hasStatusUpdate: false,
+          statusHistory: [],
           createdAt: textOrNull(item.created_at),
           updatedAt: textOrNull(item.updated_at),
           requestedCompletionDate: textOrNull(item.requested_completion_date),
@@ -249,23 +343,40 @@ export default {
         const requestIds = requests.map((request) => request.id)
 
         if (requestIds.length > 0) {
-          const { data: replyRows, error: replyError } = await ctx.supabaseAdmin
-            .from('request_replies')
-            .select('id, request_id, request_type, sender_role, message, created_at')
-            .in('request_id', requestIds)
-            .eq('is_draft', false)
-            .order('created_at', { ascending: true })
+          const [replyResult, historyResult, viewResult] = await Promise.all([
+            ctx.supabaseAdmin
+              .from('request_replies')
+              .select('id, request_id, request_type, sender_role, message, created_at')
+              .in('request_id', requestIds)
+              .eq('is_draft', false)
+              .order('created_at', { ascending: true }),
 
-          if (replyError) {
-            console.error('My Requests reply query failed:', replyError)
+            ctx.supabaseAdmin
+              .from('request_status_history')
+              .select('id, request_id, request_type, from_status, to_status, status_version, changed_at')
+              .in('request_id', requestIds)
+              .order('status_version', { ascending: true }),
+
+            ctx.supabaseAdmin
+              .from('request_status_views')
+              .select('request_id, request_type, seen_status_version')
+              .eq('user_id', userId),
+          ])
+
+          if (replyResult.error || historyResult.error || viewResult.error) {
+            console.error('My Requests related-data query failed:', {
+              replies: replyResult.error,
+              history: historyResult.error,
+              views: viewResult.error,
+            })
             return Response.json(
-              { ok: false, error: 'Your request conversations could not be loaded.' },
+              { ok: false, error: 'Your request updates could not be loaded.' },
               { status: 500 },
             )
           }
 
           const repliesByRequest = new Map<string, ReplyRecord[]>()
-          for (const row of replyRows ?? []) {
+          for (const row of replyResult.data ?? []) {
             const key = `${row.request_type}:${row.request_id}`
             if (!requestKeys.has(key)) continue
             const current = repliesByRequest.get(key) ?? []
@@ -278,9 +389,37 @@ export default {
             repliesByRequest.set(key, current)
           }
 
+          const historyByRequest = new Map<string, StatusHistoryRecord[]>()
+          for (const row of historyResult.data ?? []) {
+            const key = `${row.request_type}:${row.request_id}`
+            if (!requestKeys.has(key)) continue
+            const current = historyByRequest.get(key) ?? []
+            current.push({
+              id: row.id,
+              fromStatus: textOrNull(row.from_status),
+              toStatus: textOrNull(row.to_status) || 'pending',
+              statusVersion: integerOrDefault(row.status_version),
+              changedAt: textOrNull(row.changed_at),
+            })
+            historyByRequest.set(key, current)
+          }
+
+          const seenVersionByRequest = new Map<string, number>()
+          for (const row of viewResult.data ?? []) {
+            const key = `${row.request_type}:${row.request_id}`
+            if (!requestKeys.has(key)) continue
+            seenVersionByRequest.set(key, integerOrDefault(row.seen_status_version))
+          }
+
           for (const request of requests) {
             const databaseType = request.type === 'search' ? 'order' : request.type
-            request.replies = repliesByRequest.get(`${databaseType}:${request.id}`) ?? []
+            const key = `${databaseType}:${request.id}`
+            const seenVersion = Math.max(seenVersionByRequest.get(key) ?? 1, 1)
+
+            request.replies = repliesByRequest.get(key) ?? []
+            request.statusHistory = historyByRequest.get(key) ?? []
+            request.seenStatusVersion = seenVersion
+            request.hasStatusUpdate = request.statusVersion > seenVersion
           }
 
           const now = new Date().toISOString()

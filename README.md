@@ -330,3 +330,53 @@ my-requests
 Deploy the database change before these Edge Functions. Otherwise the functions can fail when they query `request_replies`.
 
 Administrator drafts are private to the administrator who created them. Sent messages remain visible to the conversation participants, while drafts are never returned to clients.
+
+## 11. Status Change Indication
+
+**My Requests** distinguishes a request's current status from ordinary request activity and clearly shows when the status has changed since the client last opened that request.
+
+### Existing Supabase projects
+
+Run:
+
+```text
+supabase/status-change-indication-migration.sql
+```
+
+The migration adds:
+
+- `status_updated_at` and `status_version` to discussions, quote requests, and search requests
+- `public.request_status_history` for an auditable status timeline
+- `public.request_status_views` for each client's last-seen status version
+- database triggers that update the status timestamp/version and append history whenever a status changes
+
+The status tables are not exposed directly to browser clients. RLS remains enabled, browser-role access is revoked, and the authenticated `my-requests` Edge Function returns only records belonging to the signed-in client.
+
+### Redeploy the client request function
+
+After the migration, redeploy:
+
+```text
+supabase/functions/my-requests/index.ts
+```
+
+as the Edge Function:
+
+```text
+my-requests
+```
+
+The administrator status workflow does not need a separate status-tracking API call: database triggers centralize the tracking whenever the administrator changes a request status.
+
+### Client behavior
+
+In **My Requests**:
+
+- every current status uses both a text label and a color indicator
+- a status change receives a temporary **NEW UPDATE** badge and highlighted request card
+- **Status changed** is shown separately from **Last activity**
+- opening an updated request marks that status version as seen and removes the temporary update indication
+- the request details include a reverse-chronological **Status history** timeline
+
+For a new Supabase project, the current `supabase/schema.sql` includes the same status-change structures and triggers.
+
