@@ -1329,3 +1329,68 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
   }
 }
 
+/* Ensure legend/history chips keep the semantic status colors.
+   These more-specific selectors intentionally override the generic chip base style. */
+.status-legend-chip.status-value-new,
+.status-legend-chip.status-value-submitted,
+.status-legend-chip.status-value-pending,
+.status-history-status.status-value-new,
+.status-history-status.status-value-submitted,
+.status-history-status.status-value-pending {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-legend-chip.status-value-reviewing,
+.status-history-status.status-value-reviewing {
+  border-color: #f2cf66;
+  background: #fff8d8;
+  color: #7a5a00;
+}
+
+.status-legend-chip.status-value-clarification_required,
+.status-history-status.status-value-clarification_required {
+  border-color: #fdba74;
+  background: #fff1e6;
+  color: #9a4d00;
+}
+
+.status-legend-chip.status-value-scope_confirmed,
+.status-legend-chip.status-value-search_in_progress,
+.status-legend-chip.status-value-accepted,
+.status-legend-chip.status-value-quote_requested,
+.status-history-status.status-value-scope_confirmed,
+.status-history-status.status-value-search_in_progress,
+.status-history-status.status-value-accepted,
+.status-history-status.status-value-quote_requested {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.status-legend-chip.status-value-quote_sent,
+.status-legend-chip.status-value-report_delivered,
+.status-history-status.status-value-quote_sent,
+.status-history-status.status-value-report_delivered {
+  border-color: #c4b5fd;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.status-legend-chip.status-value-completed,
+.status-history-status.status-value-completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.status-legend-chip.status-value-closed,
+.status-legend-chip.status-value-converted,
+.status-history-status.status-value-closed,
+.status-history-status.status-value-converted {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #334155;
+}
+
