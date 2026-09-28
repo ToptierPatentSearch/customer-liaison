@@ -218,6 +218,139 @@ async function updateRecordStatus(
   })
 }
 
+async function assertRecordExists(
+  ctx: any,
+  recordType: string,
+  recordId: string,
+) {
+  const config = RECORD_CONFIG[recordType]
+  if (!config || !isUuid(recordId)) return null
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from(config.table)
+    .select('id, user_id')
+    .eq('id', recordId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`Administrator ${config.table} record lookup failed:`, error)
+    throw new Error(`${config.label} could not be loaded.`)
+  }
+
+  return data
+}
+
+async function listReplies(
+  ctx: any,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+
+  const record = await assertRecordExists(ctx, recordType, recordId)
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from('request_replies')
+    .select('id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at')
+    .eq('request_type', recordType)
+    .eq('request_id', recordId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Administrator reply list failed:', error)
+    return Response.json({ ok: false, error: 'Conversation could not be loaded.' }, { status: 500 })
+  }
+
+  const now = new Date().toISOString()
+  await ctx.supabaseAdmin
+    .from('request_replies')
+    .update({ read_at: now, updated_at: now })
+    .eq('request_type', recordType)
+    .eq('request_id', recordId)
+    .eq('sender_role', 'client')
+    .eq('is_draft', false)
+    .is('read_at', null)
+
+  return Response.json({ ok: true, replies: data ?? [] })
+}
+
+async function saveAdminReply(
+  ctx: any,
+  userId: string,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  const isDraft = body.isDraft === true
+
+  if (!RECORD_CONFIG[recordType] || !isUuid(recordId) || !message || message.length > 10000) {
+    return Response.json(
+      { ok: false, error: 'Enter a reply between 1 and 10,000 characters.' },
+      { status: 400 },
+    )
+  }
+
+  const record = await assertRecordExists(ctx, recordType, recordId)
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  const { error: deleteError } = await ctx.supabaseAdmin
+    .from('request_replies')
+    .delete()
+    .eq('request_type', recordType)
+    .eq('request_id', recordId)
+    .eq('sender_id', userId)
+    .eq('sender_role', 'admin')
+    .eq('is_draft', true)
+
+  if (deleteError) {
+    console.error('Administrator draft cleanup failed:', deleteError)
+    return Response.json(
+      { ok: false, error: isDraft ? 'Draft could not be saved.' : 'Reply could not be sent.' },
+      { status: 500 },
+    )
+  }
+
+  const now = new Date().toISOString()
+  const { data, error } = await ctx.supabaseAdmin
+    .from('request_replies')
+    .insert({
+      request_id: recordId,
+      request_type: recordType,
+      sender_id: userId,
+      sender_role: 'admin',
+      message,
+      is_draft: isDraft,
+      created_at: now,
+      updated_at: now,
+    })
+    .select('id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at')
+    .single()
+
+  if (error) {
+    console.error('Administrator reply save failed:', error)
+    return Response.json(
+      { ok: false, error: isDraft ? 'Draft could not be saved.' : 'Reply could not be sent.' },
+      { status: 500 },
+    )
+  }
+
+  if (!isDraft) {
+    const config = RECORD_CONFIG[recordType]
+    await ctx.supabaseAdmin
+      .from(config.table)
+      .update({ updated_at: now })
+      .eq('id', recordId)
+  }
+
+  return Response.json({ ok: true, reply: data })
+}
+
 export default {
   fetch: withSupabase(
     { auth: 'user' },
@@ -251,6 +384,14 @@ export default {
 
         if (body.action === 'update-status') {
           return updateRecordStatus(ctx, body)
+        }
+
+        if (body.action === 'list-replies') {
+          return listReplies(ctx, body)
+        }
+
+        if (body.action === 'save-reply') {
+          return saveAdminReply(ctx, userId, body)
         }
 
         if (body.action === 'list') {
