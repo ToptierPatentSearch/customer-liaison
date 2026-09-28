@@ -19,6 +19,44 @@ const STATUS_LABELS = {
 
 const COMPLETED_STATUSES = new Set(['completed', 'closed', 'report_delivered', 'converted'])
 
+const STATUS_LEGEND = [
+  {
+    status: 'submitted',
+    label: 'Received / Submitted',
+    description: 'The request has been received.',
+  },
+  {
+    status: 'reviewing',
+    label: 'Under Review',
+    description: 'The request is being reviewed.',
+  },
+  {
+    status: 'clarification_required',
+    label: 'Information Required',
+    description: 'Additional client information is needed.',
+  },
+  {
+    status: 'search_in_progress',
+    label: 'Active / Confirmed',
+    description: 'The project is confirmed or work is underway.',
+  },
+  {
+    status: 'quote_sent',
+    label: 'Quote / Report Ready',
+    description: 'A quotation or report has been delivered.',
+  },
+  {
+    status: 'completed',
+    label: 'Completed',
+    description: 'The requested work has been completed.',
+  },
+  {
+    status: 'closed',
+    label: 'Closed / Continued',
+    description: 'The workflow has ended or moved to the next stage.',
+  },
+]
+
 function statusLabel(status) {
   if (!status) return 'Status Pending'
   return STATUS_LABELS[status] || status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
@@ -221,6 +259,25 @@ export default function MyRequests() {
         </button>
       </div>
 
+      <section className="status-color-legend" aria-labelledby="status-color-legend-title">
+        <div className="status-color-legend-heading">
+          <div>
+            <h2 id="status-color-legend-title">Status Color Legend</h2>
+            <p>Colors identify the current stage and make status changes easier to scan. Text labels are always shown with the colors.</p>
+          </div>
+        </div>
+        <div className="status-color-legend-grid">
+          {STATUS_LEGEND.map((item) => (
+            <div className="status-color-legend-item" key={item.status}>
+              <span className={`status-legend-chip status-value-${item.status}`}>
+                {item.label}
+              </span>
+              <span>{item.description}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {status.type === 'loading' && (
         <div className="status status-loading my-requests-status" role="status">
           <strong>Loading</strong>
@@ -284,7 +341,14 @@ export default function MyRequests() {
                   <dl>
                     <div><dt>Request type</dt><dd>{request.typeLabel}</dd></div>
                     <div><dt>Reference</dt><dd>{request.reference || '—'}</dd></div>
-                    <div><dt>Status</dt><dd>{statusLabel(request.status)}</dd></div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>
+                        <span className={`status-history-status status-value-${request.status || 'pending'}`}>
+                          {statusLabel(request.status)}
+                        </span>
+                      </dd>
+                    </div>
                     <div><dt>Status changed</dt><dd>{formatDate(request.statusUpdatedAt || request.createdAt, true)}</dd></div>
                     <div><dt>Service</dt><dd>{request.service || '—'}</dd></div>
                     <div><dt>Submitted</dt><dd>{formatDate(request.createdAt)}</dd></div>
@@ -318,11 +382,23 @@ export default function MyRequests() {
                           <li key={entry.id || `${entry.statusVersion}-${entry.changedAt || ''}`}>
                             <span className={`status-history-dot status-dot-${entry.toStatus || 'pending'}`} aria-hidden="true" />
                             <div>
-                              <strong>
-                                {entry.fromStatus
-                                  ? `${statusLabel(entry.fromStatus)} → ${statusLabel(entry.toStatus)}`
-                                  : statusLabel(entry.toStatus)}
-                              </strong>
+                              <div className="status-history-transition" aria-label={
+                                entry.fromStatus
+                                  ? `${statusLabel(entry.fromStatus)} changed to ${statusLabel(entry.toStatus)}`
+                                  : statusLabel(entry.toStatus)
+                              }>
+                                {entry.fromStatus && (
+                                  <>
+                                    <span className={`status-history-status status-value-${entry.fromStatus}`}>
+                                      {statusLabel(entry.fromStatus)}
+                                    </span>
+                                    <span className="status-history-arrow" aria-hidden="true">→</span>
+                                  </>
+                                )}
+                                <span className={`status-history-status status-value-${entry.toStatus || 'pending'}`}>
+                                  {statusLabel(entry.toStatus)}
+                                </span>
+                              </div>
                               <span>{formatDate(entry.changedAt, true)}</span>
                             </div>
                           </li>
