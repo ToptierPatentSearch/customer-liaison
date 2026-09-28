@@ -279,3 +279,54 @@ Quote supporting documents are opened through short-lived signed URLs generated 
 ### Quote-to-search handoff
 
 After a quotation request is successfully submitted, the client can select **Continue to Request a Search**. The application carries relevant quote data into the Search Request and stores the originating quote ID. When the Search Request is accepted by the backend, the quotation request status is updated to `converted`.
+
+
+## 10. Threaded Request Conversations
+
+Customer Liaison supports stored conversations for all three authenticated request types:
+
+- **Discuss a Project**
+- **Request a Custom Quote**
+- **Request a Search**
+
+Administrators can send replies from the administrator workspace, and signed-in clients can read and answer those messages from **My Requests**.
+
+### Existing Supabase projects
+
+Before deploying the conversation-enabled Edge Functions to an existing project, run:
+
+```text
+supabase/request-replies-migration.sql
+```
+
+The migration creates `public.request_replies`, enables RLS, revokes direct browser access, grants server-side access to `service_role`, and creates the conversation and administrator-draft indexes.
+
+### Fresh Supabase projects
+
+For a new project, run the current:
+
+```text
+supabase/schema.sql
+```
+
+The canonical schema includes `public.request_replies`, so the standalone request-replies migration is not required for a fresh installation.
+
+### Deploy the conversation-enabled Edge Functions
+
+After the database table exists, deploy or redeploy:
+
+```text
+supabase/functions/admin-orders/index.ts
+supabase/functions/my-requests/index.ts
+```
+
+as:
+
+```text
+admin-orders
+my-requests
+```
+
+Deploy the database change before these Edge Functions. Otherwise the functions can fail when they query `request_replies`.
+
+Administrator drafts are private to the administrator who created them. Sent messages remain visible to the conversation participants, while drafts are never returned to clients.
