@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
 const STATUS_LABELS = {
@@ -28,12 +28,20 @@ function formatDate(value, withTime = false) {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
-  }).format(date)
+
+  return new Intl.DateTimeFormat('en-US', withTime
+    ? {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }
+    : {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(date)
 }
 
 function requestKindClass(type) {
@@ -53,6 +61,7 @@ export default function MyRequests() {
   const [replyText, setReplyText] = useState({})
   const [sendingReply, setSendingReply] = useState('')
   const [replyStatus, setReplyStatus] = useState({})
+  const markingStatusSeen = useRef(new Set())
 
   async function loadRequests() {
     setStatus({ type: 'loading', message: 'Loading your requests…' })
@@ -73,6 +82,42 @@ export default function MyRequests() {
   useEffect(() => {
     loadRequests()
   }, [])
+
+  async function markStatusSeen(request) {
+    if (!request?.hasStatusUpdate || markingStatusSeen.current.has(request.id)) return
+
+    markingStatusSeen.current.add(request.id)
+
+    try {
+      const { data, error } = await supabase.functions.invoke('my-requests', {
+        body: {
+          action: 'mark-status-seen',
+          requestType: databaseRequestType(request.type),
+          requestId: request.id,
+        },
+      })
+
+      if (error || !data?.ok) {
+        throw new Error(error?.message || data?.error || 'Status update could not be marked as viewed.')
+      }
+
+      setRequests((current) =>
+        current.map((item) =>
+          item.id === request.id
+            ? {
+                ...item,
+                hasStatusUpdate: false,
+                seenStatusVersion: data.seenStatusVersion ?? item.statusVersion,
+              }
+            : item,
+        ),
+      )
+    } catch (error) {
+      console.error('Could not mark status update as viewed:', error)
+    } finally {
+      markingStatusSeen.current.delete(request.id)
+    }
+  }
 
   async function sendReply(request) {
     const message = (replyText[request.id] || '').trim()
@@ -202,13 +247,25 @@ export default function MyRequests() {
         <div className="my-requests-list">
           {filteredRequests.map((request) => {
             const replies = Array.isArray(request.replies) ? request.replies : []
+            const history = Array.isArray(request.statusHistory) ? request.statusHistory : []
             const currentReplyStatus = replyStatus[request.id]
 
             return (
-              <details className="customer-request-card" key={request.id}>
+              <details
+                className={`customer-request-card${request.hasStatusUpdate ? ' has-status-update' : ''}`}
+                key={request.id}
+                onToggle={(event) => {
+                  if (event.currentTarget.open) markStatusSeen(request)
+                }}
+              >
                 <summary>
                   <div className="customer-request-main">
-                    <span className={`request-kind ${requestKindClass(request.type)}`}>{request.typeLabel}</span>
+                    <div className="customer-request-label-row">
+                      <span className={`request-kind ${requestKindClass(request.type)}`}>{request.typeLabel}</span>
+                      {request.hasStatusUpdate && (
+                        <span className="request-new-update" aria-label="New status update">NEW UPDATE</span>
+                      )}
+                    </div>
                     <strong>{request.subject || request.typeLabel}</strong>
                     <span className="customer-request-reference">{request.reference || 'Reference pending'}</span>
                   </div>
@@ -218,7 +275,8 @@ export default function MyRequests() {
                       {statusLabel(request.status)}
                     </span>
                     <span>Submitted: {formatDate(request.createdAt)}</span>
-                    <span>Updated: {formatDate(request.updatedAt || request.createdAt)}</span>
+                    <span>Status changed: {formatDate(request.statusUpdatedAt || request.createdAt, true)}</span>
+                    <span>Last activity: {formatDate(request.updatedAt || request.createdAt, true)}</span>
                   </div>
                 </summary>
 
@@ -227,9 +285,10 @@ export default function MyRequests() {
                     <div><dt>Request type</dt><dd>{request.typeLabel}</dd></div>
                     <div><dt>Reference</dt><dd>{request.reference || '—'}</dd></div>
                     <div><dt>Status</dt><dd>{statusLabel(request.status)}</dd></div>
+                    <div><dt>Status changed</dt><dd>{formatDate(request.statusUpdatedAt || request.createdAt, true)}</dd></div>
                     <div><dt>Service</dt><dd>{request.service || '—'}</dd></div>
                     <div><dt>Submitted</dt><dd>{formatDate(request.createdAt)}</dd></div>
-                    <div><dt>Last updated</dt><dd>{formatDate(request.updatedAt || request.createdAt)}</dd></div>
+                    <div><dt>Last activity</dt><dd>{formatDate(request.updatedAt || request.createdAt, true)}</dd></div>
                     {request.requestedCompletionDate && (
                       <div><dt>Requested completion</dt><dd>{formatDate(request.requestedCompletionDate)}</dd></div>
                     )}
@@ -241,6 +300,36 @@ export default function MyRequests() {
                       <p>{request.summary}</p>
                     </div>
                   )}
+
+                  <section className="request-status-history" aria-label="Status history">
+                    <div className="status-history-heading">
+                      <div>
+                        <h3>Status history</h3>
+                        <p>Track the progression of this request over time.</p>
+                      </div>
+                      <span>{history.length} status entr{history.length === 1 ? 'y' : 'ies'}</span>
+                    </div>
+
+                    {history.length === 0 ? (
+                      <p className="status-history-empty">No status history is available yet.</p>
+                    ) : (
+                      <ol className="status-history-list">
+                        {[...history].reverse().map((entry) => (
+                          <li key={entry.id || `${entry.statusVersion}-${entry.changedAt || ''}`}>
+                            <span className={`status-history-dot status-dot-${entry.toStatus || 'pending'}`} aria-hidden="true" />
+                            <div>
+                              <strong>
+                                {entry.fromStatus
+                                  ? `${statusLabel(entry.fromStatus)} → ${statusLabel(entry.toStatus)}`
+                                  : statusLabel(entry.toStatus)}
+                              </strong>
+                              <span>{formatDate(entry.changedAt, true)}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </section>
 
                   <section className="request-conversation" aria-label="Request conversation">
                     <div className="conversation-heading">
