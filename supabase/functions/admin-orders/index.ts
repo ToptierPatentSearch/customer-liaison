@@ -242,6 +242,7 @@ async function assertRecordExists(
 
 async function listReplies(
   ctx: any,
+  userId: string,
   body: Record<string, unknown>,
 ) {
   const recordType = typeof body.recordType === 'string' ? body.recordType : ''
@@ -252,17 +253,38 @@ async function listReplies(
     return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
   }
 
-  const { data, error } = await ctx.supabaseAdmin
-    .from('request_replies')
-    .select('id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at')
-    .eq('request_type', recordType)
-    .eq('request_id', recordId)
-    .order('created_at', { ascending: true })
+  const replyColumns =
+    'id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at'
 
-  if (error) {
-    console.error('Administrator reply list failed:', error)
+  const [sentResult, draftResult] = await Promise.all([
+    ctx.supabaseAdmin
+      .from('request_replies')
+      .select(replyColumns)
+      .eq('request_type', recordType)
+      .eq('request_id', recordId)
+      .eq('is_draft', false)
+      .order('created_at', { ascending: true }),
+    ctx.supabaseAdmin
+      .from('request_replies')
+      .select(replyColumns)
+      .eq('request_type', recordType)
+      .eq('request_id', recordId)
+      .eq('sender_id', userId)
+      .eq('sender_role', 'admin')
+      .eq('is_draft', true)
+      .order('created_at', { ascending: true }),
+  ])
+
+  if (sentResult.error || draftResult.error) {
+    console.error('Administrator reply list failed:', sentResult.error ?? draftResult.error)
     return Response.json({ ok: false, error: 'Conversation could not be loaded.' }, { status: 500 })
   }
+
+  const replies = [...(sentResult.data ?? []), ...(draftResult.data ?? [])].sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : 0
+    const rightTime = right.created_at ? Date.parse(right.created_at) : 0
+    return leftTime - rightTime
+  })
 
   const now = new Date().toISOString()
   await ctx.supabaseAdmin
@@ -274,7 +296,7 @@ async function listReplies(
     .eq('is_draft', false)
     .is('read_at', null)
 
-  return Response.json({ ok: true, replies: data ?? [] })
+  return Response.json({ ok: true, replies })
 }
 
 async function saveAdminReply(
@@ -299,17 +321,18 @@ async function saveAdminReply(
     return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
   }
 
-  const { error: deleteError } = await ctx.supabaseAdmin
+  const { data: existingDraft, error: draftLookupError } = await ctx.supabaseAdmin
     .from('request_replies')
-    .delete()
+    .select('id')
     .eq('request_type', recordType)
     .eq('request_id', recordId)
     .eq('sender_id', userId)
     .eq('sender_role', 'admin')
     .eq('is_draft', true)
+    .maybeSingle()
 
-  if (deleteError) {
-    console.error('Administrator draft cleanup failed:', deleteError)
+  if (draftLookupError) {
+    console.error('Administrator draft lookup failed:', draftLookupError)
     return Response.json(
       { ok: false, error: isDraft ? 'Draft could not be saved.' : 'Reply could not be sent.' },
       { status: 500 },
@@ -317,20 +340,54 @@ async function saveAdminReply(
   }
 
   const now = new Date().toISOString()
-  const { data, error } = await ctx.supabaseAdmin
-    .from('request_replies')
-    .insert({
-      request_id: recordId,
-      request_type: recordType,
-      sender_id: userId,
-      sender_role: 'admin',
+  const replyColumns =
+    'id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at'
+
+  let data
+  let error
+
+  if (existingDraft?.id) {
+    const updateValues: Record<string, unknown> = {
       message,
       is_draft: isDraft,
-      created_at: now,
       updated_at: now,
-    })
-    .select('id, request_id, request_type, sender_id, sender_role, message, is_draft, read_at, created_at, updated_at')
-    .single()
+    }
+
+    if (!isDraft) {
+      updateValues.created_at = now
+    }
+
+    const updateResult = await ctx.supabaseAdmin
+      .from('request_replies')
+      .update(updateValues)
+      .eq('id', existingDraft.id)
+      .eq('sender_id', userId)
+      .eq('sender_role', 'admin')
+      .eq('is_draft', true)
+      .select(replyColumns)
+      .single()
+
+    data = updateResult.data
+    error = updateResult.error
+  } else {
+    const insertResult = await ctx.supabaseAdmin
+      .from('request_replies')
+      .insert({
+        request_id: recordId,
+        request_type: recordType,
+        sender_id: userId,
+        sender_role: 'admin',
+        message,
+        is_draft: isDraft,
+        created_at: now,
+        updated_at: now,
+      })
+      .select(replyColumns)
+      .single()
+
+    data = insertResult.data
+    error = insertResult.error
+  }
 
   if (error) {
     console.error('Administrator reply save failed:', error)
@@ -387,7 +444,7 @@ export default {
         }
 
         if (body.action === 'list-replies') {
-          return listReplies(ctx, body)
+          return listReplies(ctx, userId, body)
         }
 
         if (body.action === 'save-reply') {
