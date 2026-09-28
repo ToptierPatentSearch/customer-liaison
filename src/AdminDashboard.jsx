@@ -501,6 +501,180 @@ function StatusEditor({
   )
 }
 
+
+function ReplyEditor({ recordType, recordId }) {
+  const [loaded, setLoaded] = useState(false)
+  const [replies, setReplies] = useState([])
+  const [message, setMessage] = useState('')
+  const [status, setStatus] = useState({ type: 'idle', message: '' })
+
+  async function loadConversation() {
+    setStatus({ type: 'loading', message: 'Loading conversation…' })
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: { action: 'list-replies', recordType, recordId },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !Array.isArray(data.replies)) {
+        throw new Error(data?.error || 'Conversation could not be loaded.')
+      }
+
+      setReplies(data.replies)
+      const draft = data.replies.find((reply) => reply.is_draft && reply.sender_role === 'admin')
+      setMessage(draft?.message || '')
+      setLoaded(true)
+      setStatus({ type: 'idle', message: '' })
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Conversation could not be loaded.',
+      })
+    }
+  }
+
+  async function saveReply(isDraft) {
+    const trimmed = message.trim()
+    if (!trimmed) {
+      setStatus({ type: 'error', message: 'Please enter a reply.' })
+      return
+    }
+
+    setStatus({
+      type: 'loading',
+      message: isDraft ? 'Saving draft…' : 'Sending reply…',
+    })
+
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: {
+          action: 'save-reply',
+          recordType,
+          recordId,
+          message: trimmed,
+          isDraft,
+        },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !data.reply) {
+        throw new Error(data?.error || (isDraft ? 'Draft could not be saved.' : 'Reply could not be sent.'))
+      }
+
+      if (isDraft) {
+        setReplies((current) => [
+          ...current.filter((reply) => !(reply.is_draft && reply.sender_role === 'admin')),
+          data.reply,
+        ])
+        setStatus({ type: 'success', message: 'Draft saved.' })
+      } else {
+        setReplies((current) => [
+          ...current.filter((reply) => !(reply.is_draft && reply.sender_role === 'admin')),
+          data.reply,
+        ])
+        setMessage('')
+        setStatus({
+          type: 'success',
+          message: 'Reply sent. The customer can now read it in My Requests.',
+        })
+      }
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Reply action failed.',
+      })
+    }
+  }
+
+  if (!loaded) {
+    return (
+      <section className="admin-reply-editor">
+        <div>
+          <h2>Request Conversation</h2>
+          <p>Send a reply that will appear in the customer’s My Requests view.</p>
+        </div>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={loadConversation}
+          disabled={status.type === 'loading'}
+        >
+          {status.type === 'loading' ? 'Loading…' : 'Open Conversation'}
+        </button>
+        {status.type === 'error' && <p className="conversation-feedback error">{status.message}</p>}
+      </section>
+    )
+  }
+
+  const sentReplies = replies.filter((reply) => !reply.is_draft)
+
+  return (
+    <section className="admin-reply-editor" aria-label="Request conversation">
+      <div className="conversation-heading">
+        <div>
+          <h2>Request Conversation</h2>
+          <p>Replies are stored with this request and shown to the signed-in customer.</p>
+        </div>
+        <button className="secondary-button" type="button" onClick={loadConversation}>
+          Refresh
+        </button>
+      </div>
+
+      <div className="conversation-thread admin-conversation-thread">
+        {sentReplies.length === 0 ? (
+          <p className="conversation-empty">No messages have been exchanged yet.</p>
+        ) : (
+          sentReplies.map((reply) => (
+            <article
+              key={reply.id}
+              className={`conversation-message ${reply.sender_role === 'admin' ? 'from-admin' : 'from-client'}`}
+            >
+              <div className="conversation-message-meta">
+                <strong>{reply.sender_role === 'admin' ? 'Top-tier Patent Search' : 'Client'}</strong>
+                <span>{formatDateTime(reply.created_at)}</span>
+              </div>
+              <p>{reply.message}</p>
+            </article>
+          ))
+        )}
+      </div>
+
+      <div className="conversation-composer">
+        <label>
+          <span>Reply to client</span>
+          <textarea
+            rows="5"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            maxLength={10000}
+            placeholder="Write a reply to this request."
+          />
+        </label>
+        <div className="conversation-composer-actions">
+          <span>{message.length}/10,000</span>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => saveReply(true)}
+            disabled={status.type === 'loading'}
+          >
+            Save Draft
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => saveReply(false)}
+            disabled={status.type === 'loading'}
+          >
+            {status.type === 'loading' ? 'Processing…' : 'Send Reply'}
+          </button>
+        </div>
+        {status.type !== 'idle' && (
+          <p className={`conversation-feedback ${status.type}`}>{status.message}</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function DiscussionList({ discussions, loading, updatingStatus, onStatusChange }) {
   return (
     <section className="admin-orders-list" aria-label="Project discussions">
@@ -531,6 +705,7 @@ function DiscussionList({ discussions, loading, updatingStatus, onStatusChange }
               updating={updatingStatus === `discussion:${discussion.id}`}
               onStatusChange={onStatusChange}
             />
+            <ReplyEditor recordType="discussion" recordId={discussion.id} />
 
             <section>
               <h2>Client</h2>
@@ -596,6 +771,7 @@ function QuoteList({ quotes, loading, openingDocument, onOpenDocument, updatingS
                 updating={updatingStatus === `quote:${quote.id}`}
                 onStatusChange={onStatusChange}
               />
+              <ReplyEditor recordType="quote" recordId={quote.id} />
 
               <section>
                 <h2>Client</h2>
@@ -677,6 +853,7 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument, updatingS
                 updating={updatingStatus === `order:${order.id}`}
                 onStatusChange={onStatusChange}
               />
+              <ReplyEditor recordType="order" recordId={order.id} />
 
               <section>
                 <h2>Client</h2>
