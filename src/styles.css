@@ -1692,3 +1692,28 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
     width: 100%;
   }
 }
+
+
+.admin-workspace-documents {
+  border: 1px solid #d7e0e8;
+  border-left: 4px solid #72879d;
+  border-radius: 11px;
+  background: #fbfcfd;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+.admin-workspace-documents h2 {
+  margin: 0 0 6px;
+  border: 0;
+  padding: 0;
+  color: #2c425d;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.13rem;
+}
+.admin-workspace-documents p {
+  margin: 0;
+  color: #667789;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
