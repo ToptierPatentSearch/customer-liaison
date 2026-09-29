@@ -258,13 +258,9 @@ set public = excluded.public,
 alter table public.project_discussions
   add column if not exists status_updated_at timestamptz;
 
-update public.project_discussions
-set status_updated_at = coalesce(updated_at, created_at, now())
-where status_updated_at is null;
-
 alter table public.project_discussions
   alter column status_updated_at set default now(),
-  alter column status_updated_at set not null;
+  alter column status_updated_at drop not null;
 
 alter table public.project_discussions
   add column if not exists status_version integer not null default 1;
@@ -272,13 +268,9 @@ alter table public.project_discussions
 alter table public.quote_requests
   add column if not exists status_updated_at timestamptz;
 
-update public.quote_requests
-set status_updated_at = coalesce(updated_at, created_at, now())
-where status_updated_at is null;
-
 alter table public.quote_requests
   alter column status_updated_at set default now(),
-  alter column status_updated_at set not null;
+  alter column status_updated_at drop not null;
 
 alter table public.quote_requests
   add column if not exists status_version integer not null default 1;
@@ -286,13 +278,9 @@ alter table public.quote_requests
 alter table public.order_requests
   add column if not exists status_updated_at timestamptz;
 
-update public.order_requests
-set status_updated_at = coalesce(updated_at, created_at, now())
-where status_updated_at is null;
-
 alter table public.order_requests
   alter column status_updated_at set default now(),
-  alter column status_updated_at set not null;
+  alter column status_updated_at drop not null;
 
 alter table public.order_requests
   add column if not exists status_version integer not null default 1;
@@ -304,9 +292,12 @@ create table if not exists public.request_status_history (
   from_status text,
   to_status text not null,
   status_version integer not null check (status_version >= 1),
-  changed_at timestamptz not null default now(),
+  changed_at timestamptz default now(),
   unique (request_type, request_id, status_version)
 );
+
+alter table public.request_status_history
+  alter column changed_at drop not null;
 
 alter table public.request_status_history enable row level security;
 
@@ -459,4 +450,3 @@ insert into public.request_status_history (
 select id, 'order', null, status, status_version, status_updated_at
 from public.order_requests
 on conflict (request_type, request_id, status_version) do nothing;
-
