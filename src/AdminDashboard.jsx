@@ -18,6 +18,7 @@ const STATUS_OPTIONS = {
     ['clarification_required', 'Information Required'],
     ['quote_sent', 'Quote Sent'],
     ['accepted', 'Accepted'],
+    ['declined', 'Declined'],
     ['converted', 'Continued to Next Stage'],
     ['closed', 'Closed'],
   ],
@@ -675,6 +676,122 @@ function ReplyEditor({ recordType, recordId }) {
   )
 }
 
+function WorkspaceDocuments({ recordType, recordId }) {
+  const [loaded, setLoaded] = useState(false)
+  const [documents, setDocuments] = useState([])
+  const [status, setStatus] = useState({ type: 'idle', message: '' })
+  const [opening, setOpening] = useState('')
+
+  async function loadDocuments() {
+    setStatus({ type: 'loading', message: 'Loading added documents…' })
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: { action: 'list-workspace-documents', recordType, recordId },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !Array.isArray(data.documents)) {
+        throw new Error(data?.error || 'Added documents could not be loaded.')
+      }
+      setDocuments(data.documents)
+      setLoaded(true)
+      setStatus({ type: 'idle', message: '' })
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Added documents could not be loaded.',
+      })
+    }
+  }
+
+  async function openDocument(document) {
+    if (!document?.id) return
+    setOpening(document.id)
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: {
+          action: 'workspace-document-url',
+          recordType,
+          recordId,
+          documentId: document.id,
+        },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !data.signedUrl) {
+        throw new Error(data?.error || 'The secure document link could not be created.')
+      }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'The document could not be opened.',
+      })
+    } finally {
+      setOpening('')
+    }
+  }
+
+  if (!loaded) {
+    return (
+      <section className="admin-workspace-documents">
+        <div className="conversation-heading">
+          <div>
+            <h2>Added Documents</h2>
+            <p>Documents added after the original request are kept in the private request workspace.</p>
+          </div>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={loadDocuments}
+            disabled={status.type === 'loading'}
+          >
+            {status.type === 'loading' ? 'Loading…' : 'Load Documents'}
+          </button>
+        </div>
+        {status.type === 'error' && <p className="conversation-feedback error">{status.message}</p>}
+      </section>
+    )
+  }
+
+  return (
+    <section className="admin-workspace-documents">
+      <div className="conversation-heading">
+        <div>
+          <h2>Added Documents</h2>
+          <p>Client uploads and later deliverables associated with this request.</p>
+        </div>
+        <button className="secondary-button" type="button" onClick={loadDocuments}>Refresh</button>
+      </div>
+      {documents.length === 0 ? (
+        <p className="admin-no-documents">No documents have been added after submission.</p>
+      ) : (
+        <div className="admin-documents">
+          {documents.map((document) => (
+            <div className="admin-document" key={document.id}>
+              <div>
+                <strong>{textOrDash(document.original_name)}</strong>
+                <span>
+                  {document.uploader_role === 'client' ? 'Client upload' : 'Top-tier Patent Search'}
+                  {' · '}{fileSize(document.size_bytes)}
+                  {' · '}{formatDateTime(document.created_at)}
+                </span>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={opening === document.id}
+                onClick={() => openDocument(document)}
+              >
+                {opening === document.id ? 'Opening…' : 'Open Document'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {status.type === 'error' && <p className="conversation-feedback error">{status.message}</p>}
+    </section>
+  )
+}
+
 function DiscussionList({ discussions, loading, updatingStatus, onStatusChange }) {
   return (
     <section className="admin-orders-list" aria-label="Project discussions">
@@ -772,6 +889,7 @@ function QuoteList({ quotes, loading, openingDocument, onOpenDocument, updatingS
                 onStatusChange={onStatusChange}
               />
               <ReplyEditor recordType="quote" recordId={quote.id} />
+              <WorkspaceDocuments recordType="quote" recordId={quote.id} />
 
               <section>
                 <h2>Client</h2>
@@ -854,6 +972,7 @@ function OrderList({ orders, loading, openingDocument, onOpenDocument, updatingS
                 onStatusChange={onStatusChange}
               />
               <ReplyEditor recordType="order" recordId={order.id} />
+              <WorkspaceDocuments recordType="order" recordId={order.id} />
 
               <section>
                 <h2>Client</h2>
