@@ -2,7 +2,14 @@ import { withSupabase } from 'npm:@supabase/server@^1'
 
 const ORDER_BUCKET = 'order-supporting-documents'
 const QUOTE_BUCKET = 'quote-supporting-documents'
+const WORKSPACE_BUCKET = 'request-workspace-documents'
 const MAX_PAGE_SIZE = 200
+const MAX_FILES = 8
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+const ALLOWED_EXTENSIONS = new Set([
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'png', 'jpg', 'jpeg',
+])
+const ADMIN_DOCUMENT_CATEGORIES = new Set(['deliverable', 'quote', 'report', 'other'])
 
 const STATUS_OPTIONS: Record<string, Set<string>> = {
   discussion: new Set([
@@ -19,6 +26,7 @@ const STATUS_OPTIONS: Record<string, Set<string>> = {
     'clarification_required',
     'quote_sent',
     'accepted',
+    'declined',
     'converted',
     'closed',
   ]),
@@ -45,6 +53,58 @@ function isUuid(value: unknown): value is string {
     typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
   )
+}
+
+
+function textOrNull(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function safeFileName(name: string) {
+  return name
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(-140)
+}
+
+function extensionOf(name: string) {
+  return name.split('.').pop()?.toLowerCase() ?? ''
+}
+
+function normalizeWorkspaceFiles(value: unknown) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_FILES) {
+    throw new Error(`Select between 1 and ${MAX_FILES} documents.`)
+  }
+
+  return value.map((raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('Document information is invalid.')
+    const item = raw as Record<string, unknown>
+    const originalName = textOrNull(item.name)
+    const sizeBytes = Number(item.size)
+    const contentType = textOrNull(item.type)?.slice(0, 200) ?? null
+
+    if (!originalName || originalName.length > 255) {
+      throw new Error('Each document must have a valid file name.')
+    }
+    if (!ALLOWED_EXTENSIONS.has(extensionOf(originalName))) {
+      throw new Error(`${originalName}: unsupported file type.`)
+    }
+    if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_FILE_BYTES) {
+      throw new Error(`${originalName}: files must be 10 MB or smaller.`)
+    }
+
+    return { originalName, sizeBytes, contentType }
+  })
+}
+
+function adminWorkspacePath(
+  recordType: string,
+  recordId: string,
+  documentId: string,
+  originalName: string,
+) {
+  return `admin/${recordType}/${recordId}/${documentId}-${safeFileName(originalName) || 'document'}`
 }
 
 async function isAdministrator(ctx: any, userId: string) {
@@ -164,6 +224,246 @@ async function createDocumentUrl(
     signedUrl: data.signedUrl,
     expiresIn: 60,
   })
+}
+
+async function createWorkspaceUploads(
+  ctx: any,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+
+  if (!RECORD_CONFIG[recordType] || !isUuid(recordId)) {
+    return Response.json({ ok: false, error: 'Invalid workspace upload request.' }, { status: 400 })
+  }
+
+  const record = await assertRecordExists(ctx, recordType, recordId)
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  let files
+  try {
+    files = normalizeWorkspaceFiles(body.files)
+  } catch (error) {
+    return Response.json(
+      { ok: false, error: error instanceof Error ? error.message : 'Invalid documents.' },
+      { status: 400 },
+    )
+  }
+
+  try {
+    const uploads = await Promise.all(files.map(async (file) => {
+      const documentId = crypto.randomUUID()
+      const storagePath = adminWorkspacePath(recordType, recordId, documentId, file.originalName)
+      const { data, error } = await ctx.supabaseAdmin.storage
+        .from(WORKSPACE_BUCKET)
+        .createSignedUploadUrl(storagePath)
+
+      if (error || !data?.token) throw error ?? new Error('Upload token was not returned.')
+
+      return {
+        documentId,
+        storagePath,
+        token: data.token,
+        originalName: file.originalName,
+        contentType: file.contentType,
+        sizeBytes: file.sizeBytes,
+      }
+    }))
+
+    return Response.json({ ok: true, bucket: WORKSPACE_BUCKET, uploads })
+  } catch (error) {
+    console.error('Administrator signed workspace upload creation failed:', error)
+    return Response.json({ ok: false, error: 'Secure upload links could not be created.' }, { status: 500 })
+  }
+}
+
+async function registerWorkspaceDocuments(
+  ctx: any,
+  userId: string,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+  const category = typeof body.category === 'string' ? body.category : 'deliverable'
+  const rawDocuments = Array.isArray(body.documents) ? body.documents : []
+
+  if (
+    !RECORD_CONFIG[recordType] ||
+    !isUuid(recordId) ||
+    !ADMIN_DOCUMENT_CATEGORIES.has(category) ||
+    rawDocuments.length < 1 ||
+    rawDocuments.length > MAX_FILES
+  ) {
+    return Response.json({ ok: false, error: 'Invalid workspace document registration.' }, { status: 400 })
+  }
+
+  const record = await assertRecordExists(ctx, recordType, recordId)
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  const rows: Record<string, unknown>[] = []
+  try {
+    for (const raw of rawDocuments) {
+      if (!raw || typeof raw !== 'object') throw new Error('Document information is invalid.')
+      const item = raw as Record<string, unknown>
+      const documentId = item.documentId
+      const storagePath = textOrNull(item.storagePath)
+      const originalName = textOrNull(item.originalName)
+      const contentType = textOrNull(item.contentType)
+      const sizeBytes = Number(item.sizeBytes)
+
+      if (!isUuid(documentId) || !storagePath || !originalName || originalName.length > 255) {
+        throw new Error('Document information is invalid.')
+      }
+      if (!ALLOWED_EXTENSIONS.has(extensionOf(originalName))) {
+        throw new Error(`${originalName}: unsupported file type.`)
+      }
+      if (!Number.isFinite(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_FILE_BYTES) {
+        throw new Error(`${originalName}: files must be 10 MB or smaller.`)
+      }
+
+      const expectedPath = adminWorkspacePath(recordType, recordId, documentId, originalName)
+      if (storagePath !== expectedPath) throw new Error('Document storage path is invalid.')
+
+      rows.push({
+        id: documentId,
+        request_id: recordId,
+        request_type: recordType,
+        uploader_id: userId,
+        uploader_role: 'admin',
+        category,
+        original_name: originalName,
+        storage_path: storagePath,
+        content_type: contentType?.slice(0, 200) ?? null,
+        size_bytes: sizeBytes,
+        visible_to_client: true,
+      })
+    }
+  } catch (error) {
+    return Response.json(
+      { ok: false, error: error instanceof Error ? error.message : 'Invalid documents.' },
+      { status: 400 },
+    )
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from('request_documents')
+    .upsert(rows, { onConflict: 'storage_path' })
+    .select('id, original_name, content_type, size_bytes, category, uploader_role, visible_to_client, created_at')
+
+  if (error) {
+    console.error('Administrator workspace document registration failed:', error)
+    return Response.json({ ok: false, error: 'Documents could not be registered.' }, { status: 500 })
+  }
+
+  const now = new Date().toISOString()
+  const names = (data ?? []).map((document: Record<string, any>) => document.original_name).filter(Boolean)
+  const label = category === 'report'
+    ? 'REPORT AVAILABLE'
+    : category === 'quote'
+      ? 'QUOTATION DOCUMENT AVAILABLE'
+      : 'DOCUMENT AVAILABLE'
+
+  const { error: replyError } = await ctx.supabaseAdmin
+    .from('request_replies')
+    .insert({
+      request_id: recordId,
+      request_type: recordType,
+      sender_id: userId,
+      sender_role: 'admin',
+      message: `${label} — ${names.join(', ')}`,
+      is_draft: false,
+      created_at: now,
+      updated_at: now,
+    })
+
+  if (replyError) {
+    console.error('Administrator document notification reply failed:', replyError)
+  }
+
+  const config = RECORD_CONFIG[recordType]
+  await ctx.supabaseAdmin
+    .from(config.table)
+    .update({ updated_at: now })
+    .eq('id', recordId)
+
+  return Response.json({ ok: true, documents: data ?? [] })
+}
+
+async function listWorkspaceDocuments(
+  ctx: any,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+  const record = await assertRecordExists(ctx, recordType, recordId)
+
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from('request_documents')
+    .select('id, original_name, content_type, size_bytes, category, uploader_role, visible_to_client, created_at')
+    .eq('request_type', recordType)
+    .eq('request_id', recordId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Administrator workspace document list failed:', error)
+    return Response.json({ ok: false, error: 'Request documents could not be loaded.' }, { status: 500 })
+  }
+
+  return Response.json({ ok: true, documents: data ?? [] })
+}
+
+async function createWorkspaceDocumentUrl(
+  ctx: any,
+  body: Record<string, unknown>,
+) {
+  const recordType = typeof body.recordType === 'string' ? body.recordType : ''
+  const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+  const documentId = typeof body.documentId === 'string' ? body.documentId : ''
+
+  if (!RECORD_CONFIG[recordType] || !isUuid(recordId) || !isUuid(documentId)) {
+    return Response.json({ ok: false, error: 'Invalid workspace-document request.' }, { status: 400 })
+  }
+
+  const record = await assertRecordExists(ctx, recordType, recordId)
+  if (!record) {
+    return Response.json({ ok: false, error: 'Request record was not found.' }, { status: 404 })
+  }
+
+  const { data: document, error: documentError } = await ctx.supabaseAdmin
+    .from('request_documents')
+    .select('id, storage_path')
+    .eq('id', documentId)
+    .eq('request_type', recordType)
+    .eq('request_id', recordId)
+    .maybeSingle()
+
+  if (documentError) {
+    console.error('Administrator workspace document lookup failed:', documentError)
+    return Response.json({ ok: false, error: 'Request document could not be verified.' }, { status: 500 })
+  }
+
+  if (!document) {
+    return Response.json({ ok: false, error: 'Request document was not found.' }, { status: 404 })
+  }
+
+  const { data, error } = await ctx.supabaseAdmin.storage
+    .from(WORKSPACE_BUCKET)
+    .createSignedUrl(document.storage_path, 60)
+
+  if (error || !data?.signedUrl) {
+    console.error('Administrator workspace document signed URL failed:', error)
+    return Response.json({ ok: false, error: 'A secure document link could not be created.' }, { status: 500 })
+  }
+
+  return Response.json({ ok: true, signedUrl: data.signedUrl, expiresIn: 60 })
 }
 
 async function updateRecordStatus(
@@ -449,6 +749,22 @@ export default {
 
         if (body.action === 'save-reply') {
           return saveAdminReply(ctx, userId, body)
+        }
+
+        if (body.action === 'create-workspace-upload') {
+          return createWorkspaceUploads(ctx, body)
+        }
+
+        if (body.action === 'register-workspace-documents') {
+          return registerWorkspaceDocuments(ctx, userId, body)
+        }
+
+        if (body.action === 'list-workspace-documents') {
+          return listWorkspaceDocuments(ctx, body)
+        }
+
+        if (body.action === 'workspace-document-url') {
+          return createWorkspaceDocumentUrl(ctx, body)
         }
 
         if (body.action === 'list') {

@@ -380,3 +380,75 @@ In **My Requests**:
 
 For a new Supabase project, the current `supabase/schema.sql` includes the same status-change structures and triggers.
 
+
+
+## 12. My Requests Client Workspace
+
+**My Requests** now acts as a secure post-submission client workspace for project discussions, quotation requests, and search requests.
+
+### Client functions
+
+Signed-in clients can:
+
+- distinguish **NEW STATUS** from **NEW MESSAGE**
+- filter by All, Action Required, Active, or Completed and search by request information
+- review a context-sensitive **Next Action**
+- open the complete original submission as a read-only historical record
+- securely open original supporting documents
+- add further supporting documents after submission
+- receive and securely open quotations, reports, and other documents published by Top-tier Patent Search
+- submit an amendment request without overwriting the original instructions
+- accept or decline a quotation when its status is **Quote Sent**
+- continue to use the existing request conversation and status-history timeline
+
+Opening a request acknowledges only the status version and administrator message IDs actually rendered by that client view. A newer update arriving concurrently is therefore not cleared accidentally.
+
+### Private document workspace
+
+The post-submission workspace uses:
+
+```text
+public.request_documents
+request-workspace-documents
+```
+
+The bucket remains private. Clients and administrators request short-lived signed upload/download URLs through authenticated Edge Functions; browser roles do not receive direct table access to `public.request_documents`.
+
+For an existing Supabase project, apply:
+
+```text
+supabase/my-requests-workspace-migration.sql
+```
+
+For a fresh project, the current canonical `supabase/schema.sql` includes the same structures.
+
+After the database migration is present, deploy or redeploy:
+
+```text
+supabase/functions/my-requests/index.ts
+supabase/functions/admin-orders/index.ts
+```
+
+as:
+
+```text
+my-requests
+admin-orders
+```
+
+Deploy the database change before the Edge Functions because both functions query `public.request_documents`.
+
+### Administrator document publishing
+
+The administrator workspace can load documents added after submission and publish a document to the client as one of:
+
+- Deliverable
+- Quotation
+- Report
+- Other
+
+Publishing a document also creates an administrator conversation message, which appears to the client as **NEW MESSAGE** until that exact message is opened.
+
+### Deferred integrations
+
+Transactional email notification, invoicing/payment status, and richer milestone scheduling remain separate integrations because they require external delivery/billing configuration or a broader project-scheduling data model. The in-app workflow does not depend on those integrations.
