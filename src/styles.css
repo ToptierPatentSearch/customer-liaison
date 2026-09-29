@@ -1717,3 +1717,41 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
   font-size: 0.88rem;
   line-height: 1.5;
 }
+
+
+.admin-document-publisher {
+  padding-top: 14px;
+  border-top: 1px solid #e0e6ec;
+  display: grid;
+  gap: 12px;
+}
+.admin-document-publisher > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.admin-document-publisher > div:first-child strong {
+  color: #344d68;
+}
+.admin-document-publisher > div:first-child span,
+.admin-document-publisher label > span {
+  color: #6f7f90;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.admin-document-publisher > label {
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+}
+.admin-document-publisher .primary-button {
+  min-width: 170px;
+}
+
+@media (max-width: 720px) {
+  .admin-document-publisher > label {
+    max-width: none;
+  }
+  .admin-document-publisher .primary-button {
+    width: 100%;
+  }
+}
