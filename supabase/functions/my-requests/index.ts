@@ -135,8 +135,11 @@ async function markStatusSeen(
   const requestType = typeof body.requestType === 'string' ? body.requestType : ''
   const requestId = typeof body.requestId === 'string' ? body.requestId : ''
   const config = REQUEST_CONFIG[requestType as keyof typeof REQUEST_CONFIG]
+  const renderedStatusVersion = body.statusVersion
 
-  if (!config || !isUuid(requestId)) {
+  if (!config || !isUuid(requestId) ||
+      typeof renderedStatusVersion !== 'number' ||
+      !Number.isSafeInteger(renderedStatusVersion) || renderedStatusVersion < 1) {
     return Response.json({ ok: false, error: 'Invalid request.' }, { status: 400 })
   }
 
@@ -156,30 +159,47 @@ async function markStatusSeen(
     return Response.json({ ok: false, error: 'Request was not found.' }, { status: 404 })
   }
 
-  const seenStatusVersion = integerOrDefault(requestRecord.status_version)
+  if (renderedStatusVersion > integerOrDefault(requestRecord.status_version)) {
+    return Response.json({ ok: false, error: 'Invalid status version.' }, { status: 400 })
+  }
+
   const seenAt = new Date().toISOString()
 
-  const { error: viewError } = await ctx.supabaseAdmin
+  const { error: insertError } = await ctx.supabaseAdmin
     .from('request_status_views')
     .upsert(
       {
         request_id: requestId,
         request_type: requestType,
         user_id: userId,
-        seen_status_version: seenStatusVersion,
+        seen_status_version: renderedStatusVersion,
         seen_at: seenAt,
       },
-      { onConflict: 'request_type,request_id,user_id' },
+      { onConflict: 'request_type,request_id,user_id', ignoreDuplicates: true },
     )
 
-  if (viewError) {
-    console.error('Status seen update failed:', viewError)
+  if (insertError) {
+    console.error('Status seen insert failed:', insertError)
+    return Response.json({ ok: false, error: 'Status update could not be marked as viewed.' }, { status: 500 })
+  }
+
+  // The conditional update cannot lower a version acknowledged by another tab.
+  const { error: updateError } = await ctx.supabaseAdmin
+    .from('request_status_views')
+    .update({ seen_status_version: renderedStatusVersion, seen_at: seenAt })
+    .eq('request_id', requestId)
+    .eq('request_type', requestType)
+    .eq('user_id', userId)
+    .lt('seen_status_version', renderedStatusVersion)
+
+  if (updateError) {
+    console.error('Status seen update failed:', updateError)
     return Response.json({ ok: false, error: 'Status update could not be marked as viewed.' }, { status: 500 })
   }
 
   return Response.json({
     ok: true,
-    seenStatusVersion,
+    seenStatusVersion: renderedStatusVersion,
     seenAt,
   })
 }

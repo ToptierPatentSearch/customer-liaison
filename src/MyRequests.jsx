@@ -132,6 +132,7 @@ export default function MyRequests() {
           action: 'mark-status-seen',
           requestType: databaseRequestType(request.type),
           requestId: request.id,
+          statusVersion: request.statusVersion,
         },
       })
 
@@ -144,8 +145,8 @@ export default function MyRequests() {
           item.id === request.id
             ? {
                 ...item,
-                hasStatusUpdate: false,
-                seenStatusVersion: data.seenStatusVersion ?? item.statusVersion,
+                hasStatusUpdate: item.statusVersion > Math.max(item.seenStatusVersion, request.statusVersion),
+                seenStatusVersion: Math.max(item.seenStatusVersion, request.statusVersion),
               }
             : item,
         ),
@@ -332,7 +333,7 @@ export default function MyRequests() {
                       {statusLabel(request.status)}
                     </span>
                     <span>Submitted: {formatDate(request.createdAt)}</span>
-                    <span>Status changed: {formatDate(request.statusUpdatedAt || request.createdAt, true)}</span>
+                    <span>Status changed: {formatDate(request.statusUpdatedAt, true)}</span>
                     <span>Last activity: {formatDate(request.updatedAt || request.createdAt, true)}</span>
                   </div>
                 </summary>
@@ -349,7 +350,7 @@ export default function MyRequests() {
                         </span>
                       </dd>
                     </div>
-                    <div><dt>Status changed</dt><dd>{formatDate(request.statusUpdatedAt || request.createdAt, true)}</dd></div>
+                    <div><dt>Status changed</dt><dd>{formatDate(request.statusUpdatedAt, true)}</dd></div>
                     <div><dt>Service</dt><dd>{request.service || '—'}</dd></div>
                     <div><dt>Submitted</dt><dd>{formatDate(request.createdAt)}</dd></div>
                     <div><dt>Last activity</dt><dd>{formatDate(request.updatedAt || request.createdAt, true)}</dd></div>
