@@ -640,11 +640,27 @@ async function registerDocuments(
     return Response.json({ ok: false, error: 'Uploaded documents could not be registered.' }, { status: 500 })
   }
 
+  let reply: ReplyRecord | null = null
+  try {
+    const uploadedNames = (data ?? []).map((row: Record<string, any>) => row.original_name).filter(Boolean)
+    const label = uploadedNames.length === 1 ? 'supporting document' : 'supporting documents'
+    reply = await insertClientReply(
+      ctx,
+      userId,
+      requestType,
+      requestId,
+      `DOCUMENT UPDATE — Added ${label}: ${uploadedNames.join(', ')}`,
+    )
+  } catch (replyError) {
+    console.error('Workspace document conversation entry failed:', replyError)
+  }
+
   await touchRequest(ctx, requestType, requestId)
 
   return Response.json({
     ok: true,
     documents: (data ?? []).map((row: Record<string, any>) => mapWorkspaceDocument(row)),
+    reply,
   })
 }
 
