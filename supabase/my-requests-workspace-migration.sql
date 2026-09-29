@@ -39,6 +39,9 @@ grant all on table public.request_documents to service_role;
 create index if not exists request_documents_request_idx
   on public.request_documents (request_type, request_id, created_at);
 
+create index if not exists request_documents_uploader_id_idx
+  on public.request_documents (uploader_id);
+
 create index if not exists request_documents_client_visible_idx
   on public.request_documents (request_type, request_id, visible_to_client)
   where visible_to_client = true;
