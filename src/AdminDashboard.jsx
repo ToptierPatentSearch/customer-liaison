@@ -681,6 +681,8 @@ function WorkspaceDocuments({ recordType, recordId }) {
   const [documents, setDocuments] = useState([])
   const [status, setStatus] = useState({ type: 'idle', message: '' })
   const [opening, setOpening] = useState('')
+  const [files, setFiles] = useState([])
+  const [category, setCategory] = useState('deliverable')
 
   async function loadDocuments() {
     setStatus({ type: 'loading', message: 'Loading added documents…' })
@@ -730,6 +732,87 @@ function WorkspaceDocuments({ recordType, recordId }) {
     }
   }
 
+  function chooseFiles(event) {
+    const selected = Array.from(event.target.files || [])
+    if (selected.length > 8) {
+      setFiles([])
+      setStatus({ type: 'error', message: 'Please select no more than 8 files.' })
+      return
+    }
+
+    const invalid = selected.find((file) => file.size > 10 * 1024 * 1024)
+    if (invalid) {
+      setFiles([])
+      setStatus({ type: 'error', message: `${invalid.name}: files must be 10 MB or smaller.` })
+      return
+    }
+
+    setFiles(selected)
+    setStatus({ type: 'idle', message: '' })
+  }
+
+  async function uploadDocuments() {
+    if (!files.length) {
+      setStatus({ type: 'error', message: 'Please choose at least one file.' })
+      return
+    }
+
+    setStatus({ type: 'loading', message: 'Preparing secure upload…' })
+
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-orders', {
+        body: {
+          action: 'create-workspace-upload',
+          recordType,
+          recordId,
+          files: files.map((file) => ({ name: file.name, size: file.size, type: file.type })),
+        },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.ok || !data.bucket || !Array.isArray(data.uploads) || data.uploads.length !== files.length) {
+        throw new Error(data?.error || 'Secure upload links could not be created.')
+      }
+
+      setStatus({ type: 'loading', message: 'Uploading documents…' })
+
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        const upload = data.uploads[index]
+        const options = file.type ? { contentType: file.type } : undefined
+        const { error: uploadError } = await supabase.storage
+          .from(data.bucket)
+          .uploadToSignedUrl(upload.storagePath, upload.token, file, options)
+        if (uploadError) throw new Error(`${file.name}: ${uploadError.message}`)
+      }
+
+      const { data: registered, error: registerError } = await supabase.functions.invoke('admin-orders', {
+        body: {
+          action: 'register-workspace-documents',
+          recordType,
+          recordId,
+          category,
+          documents: data.uploads,
+        },
+      })
+      if (registerError) throw new Error(registerError.message)
+      if (!registered?.ok || !Array.isArray(registered.documents)) {
+        throw new Error(registered?.error || 'Documents could not be registered.')
+      }
+
+      setFiles([])
+      setStatus({
+        type: 'success',
+        message: `${registered.documents.length} document${registered.documents.length === 1 ? '' : 's'} published to My Requests.`,
+      })
+      await loadDocuments()
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Documents could not be uploaded.',
+      })
+    }
+  }
+
   if (!loaded) {
     return (
       <section className="admin-workspace-documents">
@@ -757,10 +840,11 @@ function WorkspaceDocuments({ recordType, recordId }) {
       <div className="conversation-heading">
         <div>
           <h2>Added Documents</h2>
-          <p>Client uploads and later deliverables associated with this request.</p>
+          <p>Client uploads and Top-tier Patent Search deliverables associated with this request.</p>
         </div>
         <button className="secondary-button" type="button" onClick={loadDocuments}>Refresh</button>
       </div>
+
       {documents.length === 0 ? (
         <p className="admin-no-documents">No documents have been added after submission.</p>
       ) : (
@@ -771,6 +855,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
                 <strong>{textOrDash(document.original_name)}</strong>
                 <span>
                   {document.uploader_role === 'client' ? 'Client upload' : 'Top-tier Patent Search'}
+                  {' · '}{textOrDash(document.category)}
                   {' · '}{fileSize(document.size_bytes)}
                   {' · '}{formatDateTime(document.created_at)}
                 </span>
@@ -787,7 +872,46 @@ function WorkspaceDocuments({ recordType, recordId }) {
           ))}
         </div>
       )}
-      {status.type === 'error' && <p className="conversation-feedback error">{status.message}</p>}
+
+      <div className="admin-document-publisher">
+        <div>
+          <strong>Publish to Client</strong>
+          <span>Upload a quotation, report, deliverable, or other project document. The client receives a NEW MESSAGE indication.</span>
+        </div>
+        <label>
+          <span>Document category</span>
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="deliverable">Deliverable</option>
+            <option value="quote">Quotation</option>
+            <option value="report">Report</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <input
+          id={`admin-workspace-files-${recordType}-${recordId}`}
+          className="file-input-hidden"
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
+          onChange={chooseFiles}
+        />
+        <div className="request-upload-actions">
+          <label className="file-picker-button" htmlFor={`admin-workspace-files-${recordType}-${recordId}`}>
+            Choose Files
+          </label>
+          <span>{files.length ? `${files.length} selected` : 'No files selected'}</span>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!files.length || status.type === 'loading'}
+            onClick={uploadDocuments}
+          >
+            {status.type === 'loading' ? 'Uploading…' : 'Publish Documents'}
+          </button>
+        </div>
+      </div>
+
+      {status.type !== 'idle' && <p className={`conversation-feedback ${status.type}`}>{status.message}</p>}
     </section>
   )
 }
