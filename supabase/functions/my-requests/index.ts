@@ -480,6 +480,7 @@ async function createDocumentUploads(
     userId,
     requestType,
     requestId,
+    'id, status',
   )
 
   if (requestError) {
@@ -489,6 +490,13 @@ async function createDocumentUploads(
 
   if (!requestRecord) {
     return Response.json({ ok: false, error: 'Request was not found.' }, { status: 404 })
+  }
+
+  if (FINAL_STATUSES.has(requestRecord.status)) {
+    return Response.json(
+      { ok: false, error: 'This request is closed to additional document uploads.' },
+      { status: 409 },
+    )
   }
 
   let files
@@ -562,6 +570,7 @@ async function registerDocuments(
     userId,
     requestType,
     requestId,
+    'id, status',
   )
 
   if (requestError) {
@@ -571,6 +580,13 @@ async function registerDocuments(
 
   if (!requestRecord) {
     return Response.json({ ok: false, error: 'Request was not found.' }, { status: 404 })
+  }
+
+  if (FINAL_STATUSES.has(requestRecord.status)) {
+    return Response.json(
+      { ok: false, error: 'This request is closed to additional document uploads.' },
+      { status: 409 },
+    )
   }
 
   const rows: Record<string, unknown>[] = []
