@@ -947,6 +947,7 @@ function DiscussionList({ discussions, loading, updatingStatus, onStatusChange }
               onStatusChange={onStatusChange}
             />
             <ReplyEditor recordType="discussion" recordId={discussion.id} />
+            <WorkspaceDocuments recordType="discussion" recordId={discussion.id} />
 
             <section>
               <h2>Client</h2>
