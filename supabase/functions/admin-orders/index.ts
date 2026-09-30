@@ -382,6 +382,13 @@ async function registerWorkspaceDocuments(
 
   if (replyError) {
     console.error('Administrator document notification reply failed:', replyError)
+    return Response.json(
+      {
+        ok: false,
+        error: 'Documents were registered, but the client notification could not be created. Please verify the request before retrying.',
+      },
+      { status: 500 },
+    )
   }
 
   const config = RECORD_CONFIG[recordType]
