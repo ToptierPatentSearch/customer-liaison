@@ -107,87 +107,107 @@ test('administrator discussion view exposes workspace documents', async () => {
   )
 })
 
-test('administrator publication reports notification insertion failures', async () => {
-  let touched = false
-  const originalName = 'report.pdf'
-  const storagePath = adminOrdersModule.adminWorkspacePath(
-    'discussion',
-    requestId,
-    documentId,
-    originalName,
-  )
-
-  const ctx = {
-    supabaseAdmin: {
-      from(table) {
-        if (table === 'project_discussions') {
-          const lookup = {
-            select() { return lookup },
-            eq() { return lookup },
-            async maybeSingle() {
-              return { data: { id: requestId, user_id: userId }, error: null }
-            },
-            update() {
-              touched = true
-              return { eq: async () => ({ error: null }) }
-            },
-          }
-          return lookup
-        }
-
-        if (table === 'request_documents') {
-          return {
-            upsert() {
-              return {
-                async select() {
-                  return {
-                    data: [{
-                      id: documentId,
-                      original_name: originalName,
-                      content_type: 'application/pdf',
-                      size_bytes: 2048,
-                      category: 'report',
-                      uploader_role: 'admin',
-                      visible_to_client: true,
-                      created_at: new Date().toISOString(),
-                    }],
-                    error: null,
-                  }
-                },
-              }
-            },
-          }
-        }
-
-        if (table === 'request_replies') {
-          return {
-            async insert() {
-              return { error: new Error('notification insert failed') }
-            },
-          }
-        }
-
-        throw new Error(`Unexpected table ${table}`)
-      },
-    },
-  }
-
-  const response = await adminOrdersModule.registerWorkspaceDocuments(ctx, userId, {
-    recordType: 'discussion',
-    recordId: requestId,
-    category: 'report',
-    documents: [{
+for (const outcome of ['notification-error', 'notification-throw', 'success', 'registration-error']) {
+  test(`administrator publication handles ${outcome}`, async () => {
+    let replyCalls = 0
+    let touched = false
+    const originalName = 'report.pdf'
+    const storagePath = adminOrdersModule.adminWorkspacePath(
+      'discussion',
+      requestId,
       documentId,
-      storagePath,
       originalName,
-      contentType: 'application/pdf',
-      sizeBytes: 2048,
-    }],
-  })
-  const body = await response.json()
+    )
 
-  assert.equal(response.status, 500)
-  assert.equal(body.ok, false)
-  assert.match(body.error, /notification could not be created/i)
-  assert.equal(touched, false)
-})
+    const ctx = {
+      supabaseAdmin: {
+        from(table) {
+          if (table === 'project_discussions') {
+            const lookup = {
+              select() { return lookup },
+              eq() { return lookup },
+              async maybeSingle() {
+                return { data: { id: requestId, user_id: userId }, error: null }
+              },
+              update() {
+                touched = true
+                return { eq: async () => ({ error: null }) }
+              },
+            }
+            return lookup
+          }
+
+          if (table === 'request_documents') {
+            return {
+              upsert() {
+                return {
+                  async select() {
+                    return {
+                      data: [{
+                        id: documentId,
+                        original_name: originalName,
+                        content_type: 'application/pdf',
+                        size_bytes: 2048,
+                        category: 'report',
+                        uploader_role: 'admin',
+                        visible_to_client: true,
+                        created_at: new Date().toISOString(),
+                      }],
+                      error: outcome === 'registration-error' ? new Error('registration failed') : null,
+                    }
+                  },
+                }
+              },
+            }
+          }
+
+          if (table === 'request_replies') {
+            return {
+              async insert() {
+                replyCalls += 1
+                if (outcome === 'notification-throw') throw new Error('notification transport failed')
+                return { error: outcome === 'notification-error' ? new Error('notification insert failed') : null }
+              },
+            }
+          }
+
+          throw new Error(`Unexpected table ${table}`)
+        },
+      },
+    }
+
+    const response = await adminOrdersModule.registerWorkspaceDocuments(ctx, userId, {
+      recordType: 'discussion',
+      recordId: requestId,
+      category: 'report',
+      documents: [{
+        documentId,
+        storagePath,
+        originalName,
+        contentType: 'application/pdf',
+        sizeBytes: 2048,
+      }],
+    })
+    const body = await response.json()
+
+    if (outcome === 'registration-error') {
+      assert.equal(response.status, 500)
+      assert.equal(body.ok, false)
+      assert.equal(replyCalls, 0)
+    } else {
+      assert.equal(response.status, 200)
+      assert.equal(body.ok, true)
+      assert.equal(body.documents[0].id, documentId)
+      assert.equal(body.notificationCreated, outcome === 'success')
+      assert.equal(replyCalls, 1)
+      if (outcome !== 'success') {
+        assert.equal(body.warningCode, 'DOCUMENT_NOTIFICATION_FAILED')
+        assert.match(body.warning, /notification could not be created/i)
+        assert.equal(body.error, undefined)
+      } else {
+        assert.equal(body.warning, undefined)
+      }
+    }
+    assert.equal(touched, outcome === 'success')
+  })
+}

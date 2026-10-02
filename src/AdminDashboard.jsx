@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
 const PAGE_SIZE = 100
@@ -683,8 +683,9 @@ function WorkspaceDocuments({ recordType, recordId }) {
   const [opening, setOpening] = useState('')
   const [files, setFiles] = useState([])
   const [category, setCategory] = useState('deliverable')
+  const fileInputRef = useRef(null)
 
-  async function loadDocuments() {
+  async function loadDocuments({ completionStatus } = {}) {
     setStatus({ type: 'loading', message: 'Loading added documents…' })
     try {
       const { data, error } = await supabase.functions.invoke('admin-orders', {
@@ -696,12 +697,12 @@ function WorkspaceDocuments({ recordType, recordId }) {
       }
       setDocuments(data.documents)
       setLoaded(true)
-      setStatus({ type: 'idle', message: '' })
+      setStatus(completionStatus || { type: 'idle', message: '' })
     } catch (error) {
-      setStatus({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Added documents could not be loaded.',
-      })
+      const message = error instanceof Error ? error.message : 'Added documents could not be loaded.'
+      setStatus(completionStatus
+        ? { type: 'warning', message: `${completionStatus.message} The document list could not be refreshed: ${message} Use Refresh to reload it; do not upload these files again.` }
+        : { type: 'error', message })
     }
   }
 
@@ -800,11 +801,15 @@ function WorkspaceDocuments({ recordType, recordId }) {
       }
 
       setFiles([])
-      setStatus({
-        type: 'success',
-        message: `${registered.documents.length} document${registered.documents.length === 1 ? '' : 's'} published to My Requests.`,
-      })
-      await loadDocuments()
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      const completionStatus = registered.notificationCreated === false
+        ? { type: 'warning', message: registered.warning || 'Documents were published, but the client notification could not be created. Do not upload these files again. Send a reply to notify the client.' }
+        : {
+            type: 'success',
+            message: `${registered.documents.length} document${registered.documents.length === 1 ? '' : 's'} published to My Requests.`,
+          }
+      setStatus(completionStatus)
+      await loadDocuments({ completionStatus })
     } catch (error) {
       setStatus({
         type: 'error',
@@ -888,6 +893,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
           </select>
         </label>
         <input
+          ref={fileInputRef}
           id={`admin-workspace-files-${recordType}-${recordId}`}
           className="file-input-hidden"
           type="file"
