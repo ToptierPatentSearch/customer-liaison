@@ -367,28 +367,36 @@ async function registerWorkspaceDocuments(
       ? 'QUOTATION DOCUMENT AVAILABLE'
       : 'DOCUMENT AVAILABLE'
 
-  const { error: replyError } = await ctx.supabaseAdmin
-    .from('request_replies')
-    .insert({
-      request_id: recordId,
-      request_type: recordType,
-      sender_id: userId,
-      sender_role: 'admin',
-      message: `${label} — ${names.join(', ')}`,
-      is_draft: false,
-      created_at: now,
-      updated_at: now,
-    })
+  // Documents are already committed. Notification failures must not make the
+  // client retry the upload with new document IDs and storage paths.
+  let notificationCreated = false
+  try {
+    const { error: replyError } = await ctx.supabaseAdmin
+      .from('request_replies')
+      .insert({
+        request_id: recordId,
+        request_type: recordType,
+        sender_id: userId,
+        sender_role: 'admin',
+        message: `${label} — ${names.join(', ')}`,
+        is_draft: false,
+        created_at: now,
+        updated_at: now,
+      })
+    notificationCreated = !replyError
+    if (replyError) console.error('Administrator document notification reply failed:', replyError)
+  } catch (error) {
+    console.error('Administrator document notification reply failed:', error)
+  }
 
-  if (replyError) {
-    console.error('Administrator document notification reply failed:', replyError)
-    return Response.json(
-      {
-        ok: false,
-        error: 'Documents were registered, but the client notification could not be created. Please verify the request before retrying.',
-      },
-      { status: 500 },
-    )
+  if (!notificationCreated) {
+    return Response.json({
+      ok: true,
+      documents: data ?? [],
+      notificationCreated: false,
+      warningCode: 'DOCUMENT_NOTIFICATION_FAILED',
+      warning: 'Documents were published to My Requests, but the client notification could not be created. Do not upload these files again. Send a reply to notify the client.',
+    })
   }
 
   const config = RECORD_CONFIG[recordType]
@@ -397,7 +405,7 @@ async function registerWorkspaceDocuments(
     .update({ updated_at: now })
     .eq('id', recordId)
 
-  return Response.json({ ok: true, documents: data ?? [] })
+  return Response.json({ ok: true, documents: data ?? [], notificationCreated: true })
 }
 
 async function listWorkspaceDocuments(
