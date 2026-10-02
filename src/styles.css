@@ -138,6 +138,14 @@ input:focus, select:focus, textarea:focus { border-color: #526f92; box-shadow: 0
 
 .auth-panel { padding: 30px 38px 38px; }
 .auth-loading { color: #53677d; line-height: 1.6; }
+.admin-mfa-panel { line-height: 1.6; }
+.admin-mfa-form { display: grid; gap: 12px; max-width: 420px; margin-top: 24px; }
+.admin-mfa-qr { display: block; width: 240px; max-width: 100%; height: auto; background: white; margin: 20px 0; }
+.admin-mfa-secret { font-family: monospace; overflow-wrap: anywhere; user-select: all; }
+.admin-mfa-enrollment { margin-top: 24px; }
+.admin-mfa-recovery { margin-top: 28px; }
+.admin-mfa-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.admin-mfa-panel .status { margin: 20px 0 0; }
 .auth-heading { max-width: 680px; }
 .auth-heading h2 { margin: 0; color: #2c425d; font-family: Georgia, "Times New Roman", serif; font-size: 1.55rem; }
 .auth-heading p { margin: 9px 0 0; color: #627284; line-height: 1.6; }

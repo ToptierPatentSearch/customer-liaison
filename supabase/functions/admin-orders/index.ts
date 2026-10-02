@@ -747,11 +747,19 @@ export default {
         const administrator = await isAdministrator(ctx, userId)
 
         if (body.action === 'status') {
-          return Response.json({ ok: true, isAdmin: administrator })
+          return Response.json({ ok: true, isAdmin: administrator, mfaVerified: administrator && ctx.jwtClaims?.aal === 'aal2' })
         }
 
         if (!administrator) {
           return Response.json({ ok: false, error: 'Administrator access is required.' }, { status: 403 })
+        }
+
+        // withSupabase authenticates the JWT; only its signed top-level claim is trusted.
+        if (ctx.jwtClaims?.aal !== 'aal2') {
+          return Response.json(
+            { ok: false, code: 'ADMIN_MFA_REQUIRED', error: 'Verify your authenticator before accessing administrator records.' },
+            { status: 403 },
+          )
         }
 
         if (body.action === 'update-status') {
