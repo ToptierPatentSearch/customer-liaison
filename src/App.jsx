@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminDashboard from './AdminDashboard.jsx'
+import AdminMfa from './AdminMfa.jsx'
 import DiscussProject from './DiscussProject.jsx'
 import QuoteRequest from './QuoteRequest.jsx'
 import MyRequests from './MyRequests.jsx'
@@ -134,6 +135,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
   const [adminAccess, setAdminAccess] = useState({ checked: false, isAdmin: false })
+  const [adminCheckVersion, setAdminCheckVersion] = useState(0)
   const [quoteSeed, setQuoteSeed] = useState({})
   const [view, setView] = useState(() => {
     const requestedView = new URLSearchParams(window.location.search).get('view')
@@ -193,7 +195,7 @@ export default function App() {
 
     supabase.functions
       .invoke('admin-orders', { body: { action: 'status' } })
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (!active) return
 
         const isAdmin =
@@ -201,7 +203,14 @@ export default function App() {
           data?.ok === true &&
           data?.isAdmin === true
 
-        setAdminAccess({ checked: true, isAdmin })
+        let mfaVerified = false
+        if (isAdmin) {
+          // SDK check also works during rollout against the previous status response.
+          const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel(session.access_token)
+          if (!active) return
+          mfaVerified = !assurance.error && assurance.data?.currentLevel === 'aal2' && data.mfaVerified !== false
+        }
+        setAdminAccess({ checked: true, isAdmin, mfaVerified, token: session.access_token })
 
         if (!isAdmin && view === 'admin') {
           setView('order')
@@ -212,13 +221,13 @@ export default function App() {
       })
       .catch(() => {
         if (!active) return
-        setAdminAccess({ checked: true, isAdmin: false })
+        setAdminAccess({ checked: true, isAdmin: false, token: session.access_token })
       })
 
     return () => {
       active = false
     }
-  }, [session, view])
+  }, [session, view, adminCheckVersion])
 
   function navigateView(nextView) {
     setView(nextView)
@@ -606,17 +615,29 @@ export default function App() {
   if (
     authReady &&
     session &&
-    adminAccess.checked &&
-    adminAccess.isAdmin &&
     view === 'admin'
   ) {
-    return (
-      <AdminDashboard
+    if (!adminAccess.checked || adminAccess.token !== session.access_token) {
+      return <main className="page-shell"><section className="form-card"><div className="auth-panel" role="status">Checking administrator access…</div></section></main>
+    }
+    if (adminAccess.isAdmin && !adminAccess.mfaVerified) {
+      return <AdminMfa
+        key={session.user.id}
         adminEmail={session.user.email ?? ''}
+        onVerified={() => setAdminCheckVersion((value) => value + 1)}
         onBack={() => navigateView('order')}
         onSignOut={handleSignOut}
       />
-    )
+    }
+    if (adminAccess.isAdmin && adminAccess.mfaVerified) {
+      return (
+        <AdminDashboard
+          adminEmail={session.user.email ?? ''}
+          onBack={() => navigateView('order')}
+          onSignOut={handleSignOut}
+        />
+      )
+    }
   }
 
   if (!authReady) {

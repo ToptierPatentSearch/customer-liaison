@@ -452,3 +452,28 @@ Publishing a document also creates an administrator conversation message, which 
 ### Deferred integrations
 
 Transactional email notification, invoicing/payment status, and richer milestone scheduling remain separate integrations because they require external delivery/billing configuration or a broader project-scheduling data model. The in-app workflow does not depend on those integrations.
+
+## 13. Administrator authenticator verification
+
+Opening **Administrator** requires a verified TOTP session. First-time administrators choose **Set up authenticator**, scan the QR code (or enter the setup key), and verify the six-digit code. Returning administrators use their existing authenticator after password sign-in. Ordinary client workflows do not require MFA.
+
+The `admin-orders` function uses both `admin_users` membership and the authenticated JWT's top-level `aal === 'aal2'` claim. All record, reply, status, upload, and download actions require both checks. The `status` action exposes only the caller's own administrator membership and MFA status at AAL1 so enrollment can be reached; it returns no client records. Body fields and user metadata cannot satisfy the MFA check.
+
+### Deployment order
+
+1. Deploy the frontend with this MFA screen first. It supports the previous `admin-orders` status response. The frontend gate alone does not protect the API; complete the backend step below.
+2. Each administrator signs in, opens **Administrator**, registers their authenticator, and saves their authenticator app's backup/recovery access securely. Test signing out and back in, entering a wrong code, then a valid code. Confirm all administrator panels and original and workspace document downloads work.
+3. Deploy `supabase/functions/admin-orders/index.ts` as `admin-orders`, retaining the existing authenticated `withSupabase({ auth: 'user' })` wrapper. Keep the project's existing gateway/signing-key configuration; this change does not depend on switching the legacy JWT gateway setting.
+4. With a fresh administrator password-only session, directly call a protected action and confirm HTTP 403 with `ADMIN_MFA_REQUIRED`. Complete MFA and repeat: it should succeed. Check that a nonadministrator remains denied even after MFA and that normal client submissions/uploads still work.
+
+No schema migration is required. `npm test` covers every protected administrator action at AAL1, forged/missing claims, AAL2 membership checks, and enrollment/verification failures. `npm run build` compiles the frontend. The physical authenticator, live sign-in, and recovery checks require the administrator and must be completed during rollout.
+
+### Lost authenticator recovery
+
+Use the authenticator application's backup first. If unavailable, the Supabase project owner must verify the administrator's identity through an established channel, confirm the correct Auth user and lost factor ID, and remove that factor through a trusted server or owner console using `supabase.auth.admin.mfa.deleteFactor({ userId, id: factorId })`. Removing a verified factor signs out its active sessions. Keep the service role key entirely outside this frontend and repository. A password reset alone does not remove the factor.
+
+After the reset, sign in again, enroll a replacement authenticator, and complete verification before reopening administrator records. Leave the server AAL2 requirement in place throughout recovery. Test this procedure with a dedicated test administrator before relying on it for the production account. The application offers no MFA bypass or reset button at AAL1.
+
+Canceled or interrupted setup creates no verified factor. The next explicit setup attempt removes only unfinished factors bearing this application's name. The QR code and setup key are held only in component memory and are not written to logs or storage.
+
+Reference: [Supabase TOTP guide](https://supabase.com/docs/guides/auth/auth-mfa/totp), [MFA verification](https://supabase.com/docs/reference/javascript/auth-mfa-verify), [owner factor reset](https://supabase.com/docs/reference/javascript/auth-admin-deletefactor).
