@@ -22,6 +22,8 @@ export default function AuthShell() {
   const [authMode, setAuthMode] = useState('signin')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authStatus, setAuthStatus] = useState({ type: 'idle', message: '' })
+  const [recoveryEmail, setRecoveryEmail] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
   const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [passwordResetForm, setPasswordResetForm] = useState({ password: '', confirmPassword: '' })
   const [passwordResetStatus, setPasswordResetStatus] = useState({ type: 'idle', message: '' })
@@ -41,6 +43,7 @@ export default function AuthShell() {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return
 
+      // Backward-compatible fallback for a valid recovery link.
       if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecovery(true)
         setPasswordResetStatus({ type: 'idle', message: '' })
@@ -62,6 +65,10 @@ export default function AuthShell() {
     setAuthForm((current) => ({ ...current, [name]: value }))
   }
 
+  function updateRecoveryCode(event) {
+    setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+  }
+
   function updatePasswordResetField(event) {
     const { name, value } = event.target
     setPasswordResetForm((current) => ({ ...current, [name]: value }))
@@ -71,6 +78,9 @@ export default function AuthShell() {
     setAuthMode(nextMode)
     setAuthStatus({ type: 'idle', message: '' })
     setAuthForm((current) => ({ ...current, password: '' }))
+    if (nextMode !== 'verify-recovery') {
+      setRecoveryCode('')
+    }
   }
 
   async function handleAuthSubmit(event) {
@@ -87,23 +97,27 @@ export default function AuthShell() {
     }
 
     if (authMode === 'forgot') {
-      setAuthStatus({ type: 'loading', message: 'Sending password reset email…' })
+      setAuthStatus({ type: 'loading', message: 'Sending recovery code…' })
 
       try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: getAuthRedirectUrl(),
-        })
+        const { error } = await supabase.auth.resetPasswordForEmail(email)
         if (error) throw error
 
+        setRecoveryEmail(email)
+        setRecoveryCode('')
+        setAuthMode('verify-recovery')
         setAuthStatus({
           type: 'success',
-          message: 'If an account exists for this email address, a password reset link has been sent. Please check your inbox and spam folder.',
+          message: 'If an account exists for this email address, a 6-digit recovery code has been sent. Enter the newest code from the email below.',
         })
       } catch (error) {
         console.error('Password reset request failed:', error)
+        const isRateLimited = error?.status === 429 || error?.code === 'over_email_send_rate_limit'
         setAuthStatus({
           type: 'error',
-          message: 'The password reset email could not be sent right now. Please wait and try again.',
+          message: isRateLimited
+            ? 'Please wait about 60 seconds before requesting another recovery code.'
+            : 'The recovery email could not be sent right now. Please wait and try again.',
         })
       }
       return
@@ -160,6 +174,45 @@ export default function AuthShell() {
     }
   }
 
+  async function handleRecoveryCodeSubmit(event) {
+    event.preventDefault()
+
+    const token = recoveryCode.trim()
+    if (!recoveryEmail || !isValidEmail(recoveryEmail)) {
+      setAuthStatus({ type: 'error', message: 'Please request a new recovery code.' })
+      setAuthMode('forgot')
+      return
+    }
+    if (!/^\d{6}$/.test(token)) {
+      setAuthStatus({ type: 'error', message: 'Please enter the 6-digit recovery code from the email.' })
+      return
+    }
+
+    setAuthStatus({ type: 'loading', message: 'Verifying recovery code…' })
+
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: recoveryEmail,
+        token,
+        type: 'recovery',
+      })
+      if (error) throw error
+      if (!data?.session) throw new Error('No recovery session was created.')
+
+      setSession(data.session)
+      setPasswordRecovery(true)
+      setRecoveryCode('')
+      setAuthStatus({ type: 'idle', message: '' })
+      setPasswordResetStatus({ type: 'idle', message: '' })
+    } catch (error) {
+      console.error('Recovery code verification failed:', error)
+      setAuthStatus({
+        type: 'error',
+        message: 'The recovery code is invalid or expired. Use the newest code, or request a new one.',
+      })
+    }
+  }
+
   async function handlePasswordResetSubmit(event) {
     event.preventDefault()
 
@@ -199,6 +252,8 @@ export default function AuthShell() {
 
   function continueAfterPasswordReset() {
     setPasswordRecovery(false)
+    setRecoveryEmail('')
+    setRecoveryCode('')
     setPasswordResetStatus({ type: 'idle', message: '' })
   }
 
@@ -232,6 +287,32 @@ export default function AuthShell() {
             onChange={updatePasswordResetField}
             onSubmit={handlePasswordResetSubmit}
             onContinue={continueAfterPasswordReset}
+          />
+        </section>
+      </main>
+    )
+  }
+
+  if (!session && authMode === 'verify-recovery') {
+    return (
+      <main className="page-shell">
+        <section className="form-card" aria-labelledby="recovery-code-title">
+          <header className="intro">
+            <p className="eyebrow">Top-tier Patent Search</p>
+            <h1 id="recovery-code-title">Verify Recovery Code</h1>
+            <p>Enter the 6-digit code sent to your email address.</p>
+          </header>
+          <RecoveryCodePanel
+            email={recoveryEmail}
+            code={recoveryCode}
+            status={authStatus}
+            onChange={updateRecoveryCode}
+            onSubmit={handleRecoveryCodeSubmit}
+            onRequestNew={() => {
+              setAuthForm((current) => ({ ...current, email: recoveryEmail, password: '' }))
+              changeAuthMode('forgot')
+            }}
+            onSignIn={() => changeAuthMode('signin')}
           />
         </section>
       </main>
@@ -274,7 +355,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
     description = 'Use the account associated with your order request.'
   } else if (isForgot) {
     heading = 'Reset your password'
-    description = 'Enter the email address associated with your account. We will send a secure password reset link.'
+    description = 'Enter the email address associated with your account. We will send a 6-digit recovery code.'
   }
 
   return (
@@ -321,8 +402,8 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
 
         <button className="primary-button auth-submit" type="submit" disabled={status.type === 'loading'}>
           {status.type === 'loading'
-            ? (isForgot ? 'Sending reset email…' : isSignIn ? 'Signing in…' : 'Creating account…')
-            : (isForgot ? 'Send Reset Link' : isSignIn ? 'Sign In' : 'Create Account')}
+            ? (isForgot ? 'Sending code…' : isSignIn ? 'Signing in…' : 'Creating account…')
+            : (isForgot ? 'Send Recovery Code' : isSignIn ? 'Sign In' : 'Create Account')}
         </button>
       </form>
 
@@ -343,6 +424,50 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
         >
           {isForgot ? 'Sign in' : isSignIn ? 'Create account' : 'Sign in'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+function RecoveryCodePanel({ email, code, status, onChange, onSubmit, onRequestNew, onSignIn }) {
+  return (
+    <div className="auth-panel">
+      <div className="auth-heading">
+        <p className="auth-kicker">Account recovery</p>
+        <h2>Enter your recovery code</h2>
+        <p>Use the newest 6-digit code sent to {email || 'your email address'}.</p>
+      </div>
+
+      {status.type !== 'idle' && (
+        <div className={`status auth-status status-${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>
+          <strong>{status.type === 'error' ? 'Recovery issue' : status.type === 'loading' ? 'Processing' : 'Recovery email sent'}</strong>
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <form className="auth-form" onSubmit={onSubmit} noValidate>
+        <Field label="6-digit recovery code" required hint="Enter digits only.">
+          <input
+            type="text"
+            name="recoveryCode"
+            value={code}
+            onChange={onChange}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]*"
+            maxLength="6"
+            required
+          />
+        </Field>
+        <button className="primary-button auth-submit" type="submit" disabled={status.type === 'loading'}>
+          {status.type === 'loading' ? 'Verifying code…' : 'Verify Code'}
+        </button>
+      </form>
+
+      <div className="auth-switch">
+        <button type="button" className="text-button" onClick={onRequestNew}>Request a new code</button>
+        <span>·</span>
+        <button type="button" className="text-button" onClick={onSignIn}>Back to sign in</button>
       </div>
     </div>
   )
