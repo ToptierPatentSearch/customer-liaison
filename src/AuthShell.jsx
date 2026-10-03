@@ -66,7 +66,7 @@ export default function AuthShell() {
   }
 
   function updateRecoveryCode(event) {
-    setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+    setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 10))
   }
 
   function updatePasswordResetField(event) {
@@ -108,7 +108,7 @@ export default function AuthShell() {
         setAuthMode('verify-recovery')
         setAuthStatus({
           type: 'success',
-          message: 'If an account exists for this email address, a 6-digit recovery code has been sent. Enter the newest code from the email below.',
+          message: 'If an account exists for this email address, a recovery code has been sent. Enter the complete newest code from the email below.',
         })
       } catch (error) {
         console.error('Password reset request failed:', error)
@@ -127,8 +127,8 @@ export default function AuthShell() {
       setAuthStatus({ type: 'error', message: 'Please enter your password.' })
       return
     }
-    if (authMode === 'signup' && authForm.password.length < 8) {
-      setAuthStatus({ type: 'error', message: 'Please use a password with at least 8 characters.' })
+    if (authMode === 'signup' && authForm.password.length < 12) {
+      setAuthStatus({ type: 'error', message: 'Please use a password with at least 12 characters.' })
       return
     }
 
@@ -183,8 +183,8 @@ export default function AuthShell() {
       setAuthMode('forgot')
       return
     }
-    if (!/^\d{6}$/.test(token)) {
-      setAuthStatus({ type: 'error', message: 'Please enter the 6-digit recovery code from the email.' })
+    if (!/^\d{6,10}$/.test(token)) {
+      setAuthStatus({ type: 'error', message: 'Please enter the complete recovery code from the email (6 to 10 digits).' })
       return
     }
 
@@ -221,8 +221,8 @@ export default function AuthShell() {
       setPasswordResetStatus({ type: 'error', message: 'Please enter a new password.' })
       return
     }
-    if (password.length < 8) {
-      setPasswordResetStatus({ type: 'error', message: 'Please use a password with at least 8 characters.' })
+    if (password.length < 12) {
+      setPasswordResetStatus({ type: 'error', message: 'Please use a password with at least 12 characters.' })
       return
     }
     if (password !== confirmPassword) {
@@ -300,7 +300,7 @@ export default function AuthShell() {
           <header className="intro">
             <p className="eyebrow">Top-tier Patent Search</p>
             <h1 id="recovery-code-title">Verify Recovery Code</h1>
-            <p>Enter the 6-digit code sent to your email address.</p>
+            <p>Enter the complete recovery code sent to your email address.</p>
           </header>
           <RecoveryCodePanel
             email={recoveryEmail}
@@ -355,7 +355,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
     description = 'Use the account associated with your order request.'
   } else if (isForgot) {
     heading = 'Reset your password'
-    description = 'Enter the email address associated with your account. We will send a 6-digit recovery code.'
+    description = 'Enter the email address associated with your account. We will send a recovery code.'
   }
 
   return (
@@ -387,7 +387,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
         </Field>
 
         {!isForgot && (
-          <Field label="Password" required hint={isSignIn ? '' : 'Use at least 8 characters.'}>
+          <Field label="Password" required hint={isSignIn ? '' : 'Use at least 12 characters.'}>
             <input
               type="password"
               name="password"
@@ -395,7 +395,7 @@ function AuthPanel({ mode, form, status, onChange, onSubmit, onModeChange }) {
               onChange={onChange}
               autoComplete={isSignIn ? 'current-password' : 'new-password'}
               required
-              minLength={isSignIn ? undefined : 8}
+              minLength={isSignIn ? undefined : 12}
             />
           </Field>
         )}
@@ -435,7 +435,7 @@ function RecoveryCodePanel({ email, code, status, onChange, onSubmit, onRequestN
       <div className="auth-heading">
         <p className="auth-kicker">Account recovery</p>
         <h2>Enter your recovery code</h2>
-        <p>Use the newest 6-digit code sent to {email || 'your email address'}.</p>
+        <p>Use the complete newest recovery code sent to {email || 'your email address'}.</p>
       </div>
 
       {status.type !== 'idle' && (
@@ -446,7 +446,7 @@ function RecoveryCodePanel({ email, code, status, onChange, onSubmit, onRequestN
       )}
 
       <form className="auth-form" onSubmit={onSubmit} noValidate>
-        <Field label="6-digit recovery code" required hint="Enter digits only.">
+        <Field label="Recovery code" required hint="Enter the complete code from the email (6 to 10 digits).">
           <input
             type="text"
             name="recoveryCode"
@@ -455,7 +455,7 @@ function RecoveryCodePanel({ email, code, status, onChange, onSubmit, onRequestN
             inputMode="numeric"
             autoComplete="one-time-code"
             pattern="[0-9]*"
-            maxLength="6"
+            maxLength="10"
             required
           />
         </Field>
@@ -479,7 +479,7 @@ function PasswordResetPanel({ form, status, onChange, onSubmit, onContinue }) {
       <div className="auth-heading">
         <p className="auth-kicker">Account security</p>
         <h2>Set a new password</h2>
-        <p>Use at least 8 characters. Enter the new password twice to prevent typing mistakes.</p>
+        <p>Use at least 12 characters. Enter the new password twice to prevent typing mistakes.</p>
       </div>
 
       {status.type !== 'idle' && (
@@ -491,7 +491,7 @@ function PasswordResetPanel({ form, status, onChange, onSubmit, onContinue }) {
 
       {status.type !== 'success' ? (
         <form className="auth-form" onSubmit={onSubmit} noValidate>
-          <Field label="New password" required hint="Use at least 8 characters.">
+          <Field label="New password" required hint="Use at least 12 characters.">
             <input
               type="password"
               name="password"
@@ -499,7 +499,7 @@ function PasswordResetPanel({ form, status, onChange, onSubmit, onContinue }) {
               onChange={onChange}
               autoComplete="new-password"
               required
-              minLength="8"
+              minLength="12"
             />
           </Field>
           <Field label="Confirm new password" required>
@@ -510,7 +510,7 @@ function PasswordResetPanel({ form, status, onChange, onSubmit, onContinue }) {
               onChange={onChange}
               autoComplete="new-password"
               required
-              minLength="8"
+              minLength="12"
             />
           </Field>
           <button className="primary-button auth-submit" type="submit" disabled={status.type === 'loading'}>
