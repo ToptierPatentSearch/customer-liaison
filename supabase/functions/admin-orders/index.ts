@@ -1,4 +1,5 @@
 import { withSupabase } from 'npm:@supabase/server@^1'
+import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
 const ORDER_BUCKET = 'order-supporting-documents'
 const QUOTE_BUCKET = 'quote-supporting-documents'
@@ -726,7 +727,7 @@ async function saveAdminReply(
 export default {
   fetch: withSupabase(
     { auth: 'user' },
-    async (req, ctx) => {
+    withRequestRateLimit(async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json({ ok: false, error: 'Method not allowed.' }, { status: 405 })
       }
@@ -747,6 +748,8 @@ export default {
         const administrator = await isAdministrator(ctx, userId)
 
         if (body.action === 'status') {
+          const blocked = await enforceRateLimit(ctx, userId, 'admin_status')
+          if (blocked) return blocked
           return Response.json({ ok: true, isAdmin: administrator, mfaVerified: administrator && ctx.jwtClaims?.aal === 'aal2' })
         }
 
@@ -761,6 +764,9 @@ export default {
             { status: 403 },
           )
         }
+
+        const blocked = await enforceRateLimit(ctx, userId, 'admin_operation')
+        if (blocked) return blocked
 
         if (body.action === 'update-status') {
           return updateRecordStatus(ctx, body)
@@ -846,6 +852,6 @@ export default {
           { status: 500 },
         )
       }
-    },
+    }),
   ),
 }

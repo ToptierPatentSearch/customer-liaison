@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from './lib/supabaseClient'
+import { supabase, invokeFunction } from './lib/supabaseClient'
 
 const PAGE_SIZE = 100
 
@@ -89,7 +89,7 @@ async function loadPaged(action, dataKey) {
   let total = null
 
   while (total === null || collected.length < total) {
-    const { data, error } = await supabase.functions.invoke('admin-orders', {
+    const { data, error } = await invokeFunction('admin-orders', {
       body: { action, offset, limit: PAGE_SIZE },
     })
 
@@ -242,7 +242,7 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
         ? { action: 'quote-document-url', quoteId: recordId, storagePath }
         : { action: 'document-url', orderId: recordId, storagePath }
 
-      const { data, error } = await supabase.functions.invoke('admin-orders', { body })
+      const { data, error } = await invokeFunction('admin-orders', { body })
 
       if (error) throw new Error(error.message)
       if (!data?.ok || !data.signedUrl) {
@@ -266,7 +266,7 @@ export default function AdminDashboard({ adminEmail, onBack, onSignOut }) {
     setActionStatus({ type: 'loading', message: 'Updating customer-visible status…' })
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: {
           action: 'update-status',
           recordType,
@@ -512,7 +512,7 @@ function ReplyEditor({ recordType, recordId }) {
   async function loadConversation() {
     setStatus({ type: 'loading', message: 'Loading conversation…' })
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: { action: 'list-replies', recordType, recordId },
       })
       if (error) throw new Error(error.message)
@@ -546,7 +546,7 @@ function ReplyEditor({ recordType, recordId }) {
     })
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: {
           action: 'save-reply',
           recordType,
@@ -688,7 +688,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
   async function loadDocuments({ completionStatus } = {}) {
     setStatus({ type: 'loading', message: 'Loading added documents…' })
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: { action: 'list-workspace-documents', recordType, recordId },
       })
       if (error) throw new Error(error.message)
@@ -710,7 +710,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
     if (!document?.id) return
     setOpening(document.id)
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: {
           action: 'workspace-document-url',
           recordType,
@@ -761,7 +761,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
     setStatus({ type: 'loading', message: 'Preparing secure upload…' })
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-orders', {
+      const { data, error } = await invokeFunction('admin-orders', {
         body: {
           action: 'create-workspace-upload',
           recordType,
@@ -786,7 +786,7 @@ function WorkspaceDocuments({ recordType, recordId }) {
         if (uploadError) throw new Error(`${file.name}: ${uploadError.message}`)
       }
 
-      const { data: registered, error: registerError } = await supabase.functions.invoke('admin-orders', {
+      const { data: registered, error: registerError } = await invokeFunction('admin-orders', {
         body: {
           action: 'register-workspace-documents',
           recordType,

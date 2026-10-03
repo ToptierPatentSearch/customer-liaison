@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { transform } from 'esbuild'
+import { importEdgeFunction } from './helpers/importEdgeFunction.js'
 
-const source = (await readFile(new URL('../supabase/functions/my-requests/index.ts', import.meta.url), 'utf8'))
-  .replace("import { withSupabase } from 'npm:@supabase/server@^1'", 'const withSupabase = (_options, handler) => handler')
-const compiled = await transform(`${source}\nexport { markStatusSeen }`, { loader: 'ts', format: 'esm' })
-const { markStatusSeen } = await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
+const { markStatusSeen } = await importEdgeFunction(new URL('../supabase/functions/my-requests/index.ts', import.meta.url), ['markStatusSeen'])
 
 const requestId = '11111111-1111-4111-8111-111111111111'
 const userId = '22222222-2222-4222-8222-222222222222'

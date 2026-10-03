@@ -477,3 +477,34 @@ After the reset, sign in again, enroll a replacement authenticator, and complete
 Canceled or interrupted setup creates no verified factor. The next explicit setup attempt removes only unfinished factors bearing this application's name. The QR code and setup key are held only in component memory and are not written to logs or storage.
 
 Reference: [Supabase TOTP guide](https://supabase.com/docs/guides/auth/auth-mfa/totp), [MFA verification](https://supabase.com/docs/reference/javascript/auth-mfa-verify), [owner factor reset](https://supabase.com/docs/reference/javascript/auth-admin-deletefactor).
+
+## 14. Server-side application rate limits
+
+All seven authenticated Edge Functions use shared, atomic PostgreSQL counters through `consume_app_rate_limit`. Limits follow the signed-in account across browser sessions and function instances. No additional Redis account, external credentials, or production npm dependency is needed.
+
+| Operation | Per-account limit | Shared scope |
+| --- | --- | --- |
+| Discussion submission attempts | 5/hour | `submit-discussion` |
+| Quote submission attempts | 5/hour | `submit-quote` |
+| Search submission attempts | 5/hour | `submit-order` |
+| Client upload authorization batches | 20/hour | Order, quote, and workspace uploads combined; existing 8-file/batch and 10-MB/file restrictions still apply |
+| Client message-producing actions | 30/hour | Replies, amendments, quote decisions, and document-registration notifications combined |
+| Administrator operations | 120/hour | All protected reads, replies, status changes, uploads, and signed document links combined |
+| Own administrator-membership status | 120/hour | Separate from protected administrator operations; available before MFA |
+| Authenticated permission denials | 10/15 minutes | HTTP 403 responses across the application; subsequent denials return 429 |
+| Authenticated API burst | 120/minute | All seven functions combined, including malformed requests |
+
+These are fixed UTC time windows, not rolling windows. A boundary can admit up to two windows' quota in a short interval. Each action has only one counter row per account, replaced when its window expires. Rejected calls do not increase the counter or postpone the reset time. Submission and mutation attempts can consume quota even when later validation fails; changing a browser-provided user ID cannot change the quota identity. Unknown actions do not create new policy names.
+
+HTTP 429 includes `code: RATE_LIMITED`, a numeric `retryAfter` in seconds, and `Retry-After`. The frontend displays the server's wait message and preserves entered form data. It does not automatically retry submissions or document registration. A missing/malformed quota response or database outage returns HTTP 503 with `RATE_LIMIT_UNAVAILABLE`; it does not permit unrestricted operations. Membership, ownership, and administrator AAL2 checks remain required.
+
+### Deployment and verification
+
+1. Apply `supabase/migrations/20261003004546_customer_liaison_rate_limits.sql` before deploying the functions. The fresh-project `supabase/schema.sql` includes the same SQL. Counter access and RPC execution belong exclusively to `service_role`; no browser policies or grants are required.
+2. Deploy the frontend error-message support and all seven functions: `submit-discussion`, `submit-quote`, `submit-order`, `create-upload-url`, `create-quote-upload-url`, `my-requests`, and `admin-orders`. Include `supabase/functions/_shared/rate-limit.ts` in every function's deployment bundle. Preserve each function's existing gateway JWT setting and authenticated wrapper.
+3. Verify a normal client submission, reply, and original/workspace upload, and a verified administrator view/document download. Use a dedicated test account for quota-exhaustion smoke tests: the sixth submission attempt should return 429 with a retry interval; another account must remain unaffected. Existing accounts are not automatically signed out by this update.
+4. During regular maintenance, remove expired counters with `delete from public.app_rate_limits where window_started_at < now() - interval '7 days';`. This table contains only account IDs, policy names, window timestamps, and counts. Do not log client messages, filenames, or invention descriptions for quota monitoring.
+
+`npm test` exercises the actual migration in embedded PostgreSQL (PGlite, a pinned development-only dependency), SQL quotas/reset/privileges, endpoint admission before privileged work, MFA/ownership regression tests, and frontend quota messages. The GitHub validation workflow type-checks all seven deployed functions.
+
+Supabase Auth sign-in/email limits and gateway rejection of invalid tokens remain separate. This change does not implement a network firewall or IP throttling for requests rejected before user authentication. It uses verified account identity and deliberately does not trust caller-supplied IP/user headers. Turnstile enrollment protection in Section 5 is still needed to reduce abuse through large numbers of accounts.

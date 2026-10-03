@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from './lib/supabaseClient'
+import { supabase, invokeFunction } from './lib/supabaseClient'
 
 const STATUS_LABELS = {
   new: 'Received',
@@ -299,7 +299,7 @@ export default function MyRequests() {
   async function loadRequests() {
     setStatus({ type: 'loading', message: 'Loading your requests…' })
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', { body: {} })
+      const { data, error } = await invokeFunction('my-requests', { body: {} })
       if (error) throw new Error(error.message)
       if (!data?.ok) throw new Error(data?.error || 'Your requests could not be loaded.')
       setRequests(Array.isArray(data.requests) ? data.requests : [])
@@ -322,7 +322,7 @@ export default function MyRequests() {
     markingStatusSeen.current.add(request.id)
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'mark-status-seen',
           requestType: databaseRequestType(request.type),
@@ -360,7 +360,7 @@ export default function MyRequests() {
     markingMessagesSeen.current.add(request.id)
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'mark-messages-seen',
           requestType: databaseRequestType(request.type),
@@ -415,7 +415,7 @@ export default function MyRequests() {
     }))
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'send-reply',
           requestType: databaseRequestType(request.type),
@@ -488,7 +488,7 @@ export default function MyRequests() {
     }))
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'create-document-upload',
           requestType: databaseRequestType(request.type),
@@ -522,7 +522,7 @@ export default function MyRequests() {
         if (uploadError) throw new Error(`${file.name}: ${uploadError.message}`)
       }
 
-      const { data: registration, error: registrationError } = await supabase.functions.invoke('my-requests', {
+      const { data: registration, error: registrationError } = await invokeFunction('my-requests', {
         body: {
           action: 'register-documents',
           requestType: databaseRequestType(request.type),
@@ -594,7 +594,7 @@ export default function MyRequests() {
             documentId: document.id,
           }
 
-      const { data, error } = await supabase.functions.invoke('my-requests', { body })
+      const { data, error } = await invokeFunction('my-requests', { body })
       if (error) throw new Error(error.message)
       if (!data?.ok || !data.signedUrl) {
         throw new Error(data?.error || 'The secure document link could not be created.')
@@ -632,7 +632,7 @@ export default function MyRequests() {
     }))
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'submit-amendment',
           requestType: databaseRequestType(request.type),
@@ -687,7 +687,7 @@ export default function MyRequests() {
     }))
 
     try {
-      const { data, error } = await supabase.functions.invoke('my-requests', {
+      const { data, error } = await invokeFunction('my-requests', {
         body: {
           action: 'quote-decision',
           requestId: request.id,

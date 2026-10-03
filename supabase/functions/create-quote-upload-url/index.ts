@@ -1,4 +1,5 @@
 import { withSupabase } from 'npm:@supabase/server@^1'
+import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
 const BUCKET = 'quote-supporting-documents'
 const MAX_FILES = 8
@@ -26,7 +27,7 @@ function validateFileName(value: unknown) {
 export default {
   fetch: withSupabase(
     { auth: 'user' },
-    async (req, ctx) => {
+    withRequestRateLimit(async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json({ ok: false, error: 'Method not allowed.' }, { status: 405 })
       }
@@ -49,6 +50,9 @@ export default {
         if (!Array.isArray(body.files)) throw new Error('Supporting-document information is required.')
         if (body.files.length === 0) return Response.json({ ok: true, uploads: [] })
         if (body.files.length > MAX_FILES) throw new Error(`No more than ${MAX_FILES} supporting documents are permitted.`)
+
+        const blocked = await enforceRateLimit(ctx, authenticatedUserId, 'upload_authorization')
+        if (blocked) return blocked
 
         const uploads = []
 
@@ -99,6 +103,6 @@ export default {
           error: error instanceof Error ? error.message : 'Invalid upload request.',
         }, { status: 400 })
       }
-    },
+    }),
   ),
 }
