@@ -117,7 +117,7 @@ export default function AuthShell() {
         setAuthStatus({
           type: 'error',
           message: isRateLimited
-            ? 'Please wait about 60 seconds before requesting another recovery code.'
+            ? 'Too many recovery emails have been requested. Please wait and try again later.'
             : 'The recovery email could not be sent right now. Please wait and try again.',
         })
       }
