@@ -13,6 +13,14 @@ function isInsufficientAal(error) {
     || /AAL2 session is required/i.test(error?.message ?? '')
 }
 
+function mfaVerificationMessage(error) {
+  const message = errorMessage(error, 'Authenticator verification failed. Please retry.')
+  if (/invalid TOTP code/i.test(message)) {
+    return 'That authenticator code was not accepted. Open your authenticator app and enter the current 6-digit code shown there.'
+  }
+  return message
+}
+
 export default function RecoveryPasswordReset({ onContinue }) {
   const [phase, setPhase] = useState('checking')
   const [factors, setFactors] = useState([])
@@ -78,14 +86,22 @@ export default function RecoveryPasswordReset({ onContinue }) {
   }
 
   function updateMfaCode(event) {
-    setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+    setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 10))
   }
 
   async function handleMfaSubmit(event) {
     event.preventDefault()
 
-    if (!factorId || !/^\d{6}$/.test(mfaCode)) {
-      setMfaStatus({ type: 'error', message: 'Enter the six-digit code from your authenticator app.' })
+    if (!factorId) {
+      setMfaStatus({ type: 'error', message: 'No verified authenticator is available for this account.' })
+      return
+    }
+
+    if (!/^\d{6}$/.test(mfaCode)) {
+      setMfaStatus({
+        type: 'error',
+        message: 'The email recovery code is not used on this screen. Open your authenticator app and enter its current 6-digit code.',
+      })
       return
     }
 
@@ -100,7 +116,7 @@ export default function RecoveryPasswordReset({ onContinue }) {
       console.error('Recovery MFA verification failed:', error)
       setMfaStatus({
         type: 'error',
-        message: errorMessage(error, 'Authenticator verification failed. Please retry.'),
+        message: mfaVerificationMessage(error),
       })
     }
   }
@@ -197,7 +213,7 @@ export default function RecoveryPasswordReset({ onContinue }) {
         <div className="auth-heading">
           <p className="auth-kicker">Account security</p>
           <h2>Verify your authenticator</h2>
-          <p>This account has MFA enabled. Verify your registered authenticator before setting a new password.</p>
+          <p>This is a separate MFA step. Do not enter the recovery code from the email here. Open the authenticator app previously registered with this account and enter the current 6-digit code shown by that app.</p>
         </div>
 
         {mfaStatus.type !== 'idle' && (
@@ -220,15 +236,15 @@ export default function RecoveryPasswordReset({ onContinue }) {
                 </select>
               </Field>
             )}
-            <Field label="Six-digit authenticator code" required hint="Enter the current code from your authenticator app.">
+            <Field label="Authenticator app code" required hint="Use the current 6-digit code from your authenticator app — not the code from the recovery email.">
               <input
                 type="text"
                 value={mfaCode}
                 onChange={updateMfaCode}
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength="6"
+                pattern="[0-9]*"
+                maxLength="10"
                 required
                 disabled={mfaStatus.type === 'loading'}
               />

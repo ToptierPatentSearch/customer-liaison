@@ -75,3 +75,12 @@ test('recovery UI handles Supabase insufficient_aal as an MFA step', () => {
   assert.match(recoveryPanelSource, /Verify and Continue/)
   assert.match(recoveryPanelSource, /updateUser\(\{ password \}\)/)
 })
+
+test('MFA screen clearly distinguishes authenticator code from email recovery code', () => {
+  assert.match(recoveryPanelSource, /Do not enter the recovery code from the email here/)
+  assert.match(recoveryPanelSource, /authenticator app previously registered with this account/)
+  assert.match(recoveryPanelSource, /The email recovery code is not used on this screen/)
+  assert.match(recoveryPanelSource, /Authenticator app code/)
+  assert.match(recoveryPanelSource, /slice\(0, 10\)/)
+  assert.match(recoveryPanelSource, /maxLength="10"/)
+})
