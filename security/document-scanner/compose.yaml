@@ -1,0 +1,52 @@
+services:
+  clamav:
+    image: clamav/clamav:1.5.4_base@sha256:7769870154c74ce31b0047dd8771e81f7c4269278bc005782e9e419e4922c73d
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      FRESHCLAM_CHECKS: "12"
+    volumes:
+      - signatures:/var/lib/clamav
+      - ./clamd.conf:/etc/clamav/clamd.conf:ro
+    tmpfs:
+      - /tmp:size=256m
+    mem_limit: 4g
+    cpus: 2
+    networks: [scanner]
+  gateway:
+    build: .
+    restart: unless-stopped
+    depends_on: [clamav]
+    environment:
+      CLAMD_HOST: clamav
+      PYTHONDONTWRITEBYTECODE: "1"
+    secrets: [scanner_token]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1
+    networks: [scanner]
+  https:
+    image: caddy:2-alpine@sha256:881bbc60f9986d5ab8e7cfd6cf7e4ef3c9c0439fef2429d035d065577882f028
+    restart: unless-stopped
+    environment:
+      SCANNER_HOSTNAME: ${SCANNER_HOSTNAME:?Set the scanner hostname}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      - caddy_config:/config
+    depends_on: [gateway]
+    networks: [scanner]
+networks:
+  scanner:
+volumes:
+  signatures:
+  certificates:
+  caddy_config:
+secrets:
+  scanner_token:
+    file: ./secrets/scanner-token

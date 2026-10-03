@@ -524,3 +524,11 @@ Future `public` tables and sequences created by `postgres` no longer automatical
 `npm test` executes the actual permissions migration in PostgreSQL and verifies browser operation rejection, server CRUD and sequence access, future object defaults, optional maintenance objects, idempotent application, and preservation of unrelated schema access. After applying it, verify effective grants with `has_table_privilege`, `has_column_privilege`, and `has_sequence_privilege`, and test harmless queries with `SET LOCAL ROLE anon`, `authenticated`, and `service_role` inside a rolled-back transaction.
 
 Reference: [Supabase API security and explicit grants](https://supabase.com/docs/guides/api/securing-your-api).
+
+## 16. Private malware scanning before document downloads
+
+Section 8 is prepared in this revision and requires a running private scanner before activation. Follow [the private scanner setup and rollout instructions](security/document-scanner/README.md). Do not deploy the changed `admin-orders` and `my-requests` functions before configuring and testing the scanner: missing configuration intentionally denies downloads.
+
+All six original order/quote and workspace download actions authorize the caller before sending document bytes to the privately hosted scanner. Only a clean result matching the SHA-256 digest and byte length, a supported engine, and current definitions can issue a 60-second signed link. Malware, encrypted documents, Office macros, and scanning limits block downloads. Failures and stale signatures return a readable temporary-unavailability message. Existing private files are checked on their next download; no database migration or manual clean-status assignment is required.
+
+Keep uploaded objects immutable: use new unique paths and `upsert: false` for replacements, and retain the absence of browser Storage UPDATE/DELETE privileges. This requirement also applies to privileged dashboard/service-role operations. Files stay private in Storage, and this integration submits no documents to public scanning services. Scanner hosting, its server-only secrets, and the commissioning tests must be completed before declaring Section 8 active.

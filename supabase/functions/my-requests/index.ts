@@ -1,3 +1,4 @@
+import { createScannedDocumentUrl } from '../_shared/document-scan.ts'
 import { withSupabase } from 'npm:@supabase/server@^1'
 import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
@@ -524,7 +525,7 @@ async function createDocumentUploads(
 
         const { data, error } = await ctx.supabaseAdmin.storage
           .from(WORKSPACE_BUCKET)
-          .createSignedUploadUrl(storagePath)
+          .createSignedUploadUrl(storagePath, { upsert: false })
 
         if (error || !data?.token) {
           throw error ?? new Error('Upload token was not returned.')
@@ -732,16 +733,7 @@ async function createWorkspaceDocumentUrl(
     return Response.json({ ok: false, error: 'Document was not found.' }, { status: 404 })
   }
 
-  const { data, error } = await ctx.supabaseAdmin.storage
-    .from(WORKSPACE_BUCKET)
-    .createSignedUrl(document.storage_path, 60)
-
-  if (error || !data?.signedUrl) {
-    console.error('Workspace document signed URL failed:', error)
-    return Response.json({ ok: false, error: 'A secure document link could not be created.' }, { status: 500 })
-  }
-
-  return Response.json({ ok: true, signedUrl: data.signedUrl, expiresIn: 60 })
+  return createScannedDocumentUrl(ctx, WORKSPACE_BUCKET, document.storage_path)
 }
 
 async function createOriginalDocumentUrl(
@@ -787,16 +779,7 @@ async function createOriginalDocumentUrl(
     return Response.json({ ok: false, error: 'Document does not belong to this request.' }, { status: 403 })
   }
 
-  const { data, error } = await ctx.supabaseAdmin.storage
-    .from(config.bucket)
-    .createSignedUrl(storagePath, 60)
-
-  if (error || !data?.signedUrl) {
-    console.error('Original document signed URL failed:', error)
-    return Response.json({ ok: false, error: 'A secure document link could not be created.' }, { status: 500 })
-  }
-
-  return Response.json({ ok: true, signedUrl: data.signedUrl, expiresIn: 60 })
+  return createScannedDocumentUrl(ctx, config.bucket, storagePath)
 }
 
 async function submitAmendment(
