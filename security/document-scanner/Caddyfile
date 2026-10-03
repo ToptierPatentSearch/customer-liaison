@@ -1,0 +1,11 @@
+{$SCANNER_HOSTNAME} {
+    request_body {
+        max_size 10485760
+    }
+    reverse_proxy gateway:8080 {
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 35s
+        }
+    }
+}

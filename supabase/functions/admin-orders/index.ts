@@ -1,3 +1,4 @@
+import { createScannedDocumentUrl } from '../_shared/document-scan.ts'
 import { withSupabase } from 'npm:@supabase/server@^1'
 import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
@@ -208,23 +209,7 @@ async function createDocumentUrl(
     )
   }
 
-  const { data, error } = await ctx.supabaseAdmin.storage
-    .from(options.bucket)
-    .createSignedUrl(storagePath, 60)
-
-  if (error || !data?.signedUrl) {
-    console.error('Administrator signed URL error:', error)
-    return Response.json(
-      { ok: false, error: 'A secure document link could not be created.' },
-      { status: 500 },
-    )
-  }
-
-  return Response.json({
-    ok: true,
-    signedUrl: data.signedUrl,
-    expiresIn: 60,
-  })
+  return createScannedDocumentUrl(ctx, options.bucket, storagePath)
 }
 
 async function createWorkspaceUploads(
@@ -259,7 +244,7 @@ async function createWorkspaceUploads(
       const storagePath = adminWorkspacePath(recordType, recordId, documentId, file.originalName)
       const { data, error } = await ctx.supabaseAdmin.storage
         .from(WORKSPACE_BUCKET)
-        .createSignedUploadUrl(storagePath)
+        .createSignedUploadUrl(storagePath, { upsert: false })
 
       if (error || !data?.token) throw error ?? new Error('Upload token was not returned.')
 
@@ -470,16 +455,7 @@ async function createWorkspaceDocumentUrl(
     return Response.json({ ok: false, error: 'Request document was not found.' }, { status: 404 })
   }
 
-  const { data, error } = await ctx.supabaseAdmin.storage
-    .from(WORKSPACE_BUCKET)
-    .createSignedUrl(document.storage_path, 60)
-
-  if (error || !data?.signedUrl) {
-    console.error('Administrator workspace document signed URL failed:', error)
-    return Response.json({ ok: false, error: 'A secure document link could not be created.' }, { status: 500 })
-  }
-
-  return Response.json({ ok: true, signedUrl: data.signedUrl, expiresIn: 60 })
+  return createScannedDocumentUrl(ctx, WORKSPACE_BUCKET, document.storage_path)
 }
 
 async function updateRecordStatus(
