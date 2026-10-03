@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import App from './App.jsx'
+import RecoveryPasswordReset from './RecoveryPasswordReset.jsx'
 import { supabase } from './lib/supabaseClient'
 
 function getAuthRedirectUrl() {
@@ -281,13 +282,7 @@ export default function AuthShell() {
             <h1 id="password-reset-title">Reset Your Password</h1>
             <p>Choose a new password for your Customer Liaison account.</p>
           </header>
-          <PasswordResetPanel
-            form={passwordResetForm}
-            status={passwordResetStatus}
-            onChange={updatePasswordResetField}
-            onSubmit={handlePasswordResetSubmit}
-            onContinue={continueAfterPasswordReset}
-          />
+          <RecoveryPasswordReset onContinue={continueAfterPasswordReset} />
         </section>
       </main>
     )
