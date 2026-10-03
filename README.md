@@ -524,3 +524,25 @@ Future `public` tables and sequences created by `postgres` no longer automatical
 `npm test` executes the actual permissions migration in PostgreSQL and verifies browser operation rejection, server CRUD and sequence access, future object defaults, optional maintenance objects, idempotent application, and preservation of unrelated schema access. After applying it, verify effective grants with `has_table_privilege`, `has_column_privilege`, and `has_sequence_privilege`, and test harmless queries with `SET LOCAL ROLE anon`, `authenticated`, and `service_role` inside a rolled-back transaction.
 
 Reference: [Supabase API security and explicit grants](https://supabase.com/docs/guides/api/securing-your-api).
+
+## 16. Browser Content Security Policy (protection Section 9)
+
+`index.html` declares an enforced Content Security Policy immediately after its character encoding and before executable scripts or styles. GitHub Pages serves the policy inside the HTML, so this protection needs no additional hosting, account, or paid server. Rebuild and deploy the frontend to activate it; no database or Edge Function changes are required.
+
+Scripts, stylesheets, and fonts can load only from the application's own origin. Inline scripts, event-handler attributes, `eval`/`Function` string execution, inline styles, objects, child frames, workers, media, and base-URL changes are blocked. Network requests are limited to the application's own origin and `https://syshvcymwktnkrkrvwtk.supabase.co`, covering Auth, Edge Functions, and signed Storage uploads. Images can use the own origin, `data:`, or `blob:` so the administrator authenticator's QR image works. Arbitrary HTTPS images and other Supabase project origins are not allowed. Existing signed downloads still open in a separate tab with `noopener,noreferrer`.
+
+The production policy has no `unsafe-inline`, `unsafe-eval`, wildcard hosts, shared/static nonce, or external reporting destination. Keep resource allowances tied to demonstrated application needs. Update the exact allowed Supabase origin and browser tests if the backend project changes. Future integrations such as CAPTCHA or external analytics need their own reviewed policy changes; do not simply add `https:` to script or connection sources to fix a browser error.
+
+For `npm run dev` only, the Vite `local-development-csp` plugin removes the meta policy from the transformed HTML so Vite's React preamble, injected development CSS, and hot-reload WebSocket can work. Source HTML and all production builds retain the enforced policy. Keep the development server bound to a trusted local development environment. `vite preview` serves the built policy unchanged.
+
+The policy is an origin allowlist, not a hash-based strict CSP, and cannot protect against a compromised same-origin bundle or replace authorization, input handling, private Storage, or MFA. Meta-delivered CSP does not support `frame-ancestors`, header-only reporting/report-only modes, or server response headers such as HSTS and X-Content-Type-Options. It blocks child frames created by this application but does not prevent another site from embedding this page. Do not claim clickjacking or full HTTP-header protection from this change. Section 8's private malware scanner remains deferred in a separate draft change.
+
+### Verification
+
+Run `npm test`, then install the test-only browser with `npx playwright install chromium` and run `npm run test:csp`. The pinned Playwright development dependency adds no runtime browser code. The browser suite builds the real frontend with synthetic configuration, serves it locally, and intercepts every Supabase response. It creates no real accounts, factors, requests, or Storage objects.
+
+Chromium verifies password sign-in, the authenticator QR image and MFA verification, quote submission with the real SDK's signed-upload call, all six original order/quote and workspace download routes for clients and administrators, and stylesheet rendering without CSP violations. Separate negative checks confirm that injected inline/data/external scripts, event handlers, unsafe evaluation, external images, inline styles, child frames, unapproved connections, base-URL changes, and external form submissions are blocked. Disallowed external resource requests never reach the network. It also verifies that production output enforces the policy and local development retains hot reload. Optional `CSP_BROWSER_EXECUTABLE` and JSON-array `CSP_BROWSER_ARGS` environment variables can select an existing local test browser.
+
+After deployment, open the public sign-in page in a fresh browser context and confirm that the deployed HTML contains the policy and renders normally. Actual account credentials and a physical authenticator are intentionally outside automated tests. Inspect browser CSP errors during routine sign-in and file use and after future resource changes; keep the production policy enforced.
+
+References: [MDN Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP), [Vite CSP behavior](https://vite.dev/guide/features.html#content-security-policy-csp).
