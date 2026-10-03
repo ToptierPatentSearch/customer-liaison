@@ -14,14 +14,14 @@ test('sign-in UI exposes forgot-password recovery code flow', () => {
   assert.match(authShellSource, /Forgot password\?/)
   assert.match(authShellSource, /resetPasswordForEmail\(email\)/)
   assert.match(authShellSource, /Send Recovery Code/)
-  assert.match(authShellSource, /6-digit recovery code/)
+  assert.match(authShellSource, /recovery code/)
 })
 
 test('recovery code is verified as a recovery OTP', () => {
   assert.match(authShellSource, /verifyOtp\(\{/)
   assert.match(authShellSource, /email: recoveryEmail/)
   assert.match(authShellSource, /type: ['"]recovery['"]/)
-  assert.match(authShellSource, /\^\\d\{6\}\$/)
+  assert.match(authShellSource, /\^\\d\{6,10\}\$/)
 })
 
 test('verified recovery session opens the password reset form', () => {
@@ -35,7 +35,7 @@ test('valid recovery links remain supported as a fallback', () => {
 })
 
 test('password recovery validates minimum length and confirmation', () => {
-  assert.match(authShellSource, /password\.length < 8/)
+  assert.match(authShellSource, /password\.length < 12/)
   assert.match(authShellSource, /password !== confirmPassword/)
   assert.match(authShellSource, /Your password has been updated successfully/)
 })
