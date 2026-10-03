@@ -508,3 +508,19 @@ HTTP 429 includes `code: RATE_LIMITED`, a numeric `retryAfter` in seconds, and `
 `npm test` exercises the actual migration in embedded PostgreSQL (PGlite, a pinned development-only dependency), SQL quotas/reset/privileges, endpoint admission before privileged work, MFA/ownership regression tests, and frontend quota messages. The GitHub validation workflow type-checks all seven deployed functions.
 
 Supabase Auth sign-in/email limits and gateway rejection of invalid tokens remain separate. This change does not implement a network firewall or IP throttling for requests rejected before user authentication. It uses verified account identity and deliberately does not trust caller-supplied IP/user headers. Turnstile enrollment protection in Section 5 is still needed to reduce abuse through large numbers of accounts.
+
+## 15. Database least-privilege access
+
+Apply `supabase/migrations/20261003021321_customer_liaison_database_privileges.sql` after the existing schema and rate-limit migration. The fresh-project `supabase/schema.sql` includes the same SQL. No frontend or Edge Function redeployment is required for this permissions-only update.
+
+The migration removes **all** table privileges from `PUBLIC`, `anon`, and `authenticated` on `order_requests`, `project_discussions`, `quote_requests`, `admin_users`, `request_replies`, `request_status_history`, `request_status_views`, `request_documents`, and `app_rate_limits`. Earlier request-table migrations removed only SELECT/INSERT/UPDATE/DELETE, leaving unnecessary TRUNCATE, REFERENCES, TRIGGER, and MAINTAIN permissions. Column grants were also checked before applying this migration; the live application had none.
+
+Authenticated Edge Functions continue to validate account ownership, administrator membership, and MFA before using their server-side admin client. Explicit SELECT/INSERT/UPDATE/DELETE grants preserve server access even when Supabase stops granting automatic privileges to new tables. Existing service-role permissions remain intact. RLS remains enabled, and no browser access policies are added. An "RLS Enabled No Policy" informational notice is expected for tables that intentionally deny all browser access; do not add permissive policies merely to remove it.
+
+The optional `project_maintenance` table and its ID sequence receive the same browser restrictions when present. SQL Editor/database-owner maintenance and server operations continue to work. `auth`, `storage`, and their policies/grants are not changed, so signed document uploads and downloads retain their existing access model.
+
+Future `public` tables and sequences created by `postgres` no longer automatically grant privileges to browser roles. This default change affects future objects only and is scoped to that creator and schema; review grants explicitly if another role creates objects. For each new server-only table, enable RLS and explicitly grant the service role only the access needed by its functions. Changing default privileges does not itself enable RLS on future tables. Avoid blanket browser grants or disabling the Data API: the Edge Functions still use it through the server client.
+
+`npm test` executes the actual permissions migration in PostgreSQL and verifies browser operation rejection, server CRUD and sequence access, future object defaults, optional maintenance objects, idempotent application, and preservation of unrelated schema access. After applying it, verify effective grants with `has_table_privilege`, `has_column_privilege`, and `has_sequence_privilege`, and test harmless queries with `SET LOCAL ROLE anon`, `authenticated`, and `service_role` inside a rolled-back transaction.
+
+Reference: [Supabase API security and explicit grants](https://supabase.com/docs/guides/api/securing-your-api).
