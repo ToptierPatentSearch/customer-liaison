@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from './lib/supabaseClient'
+import { invokeFunction } from './lib/supabaseClient'
 
 const PROJECT_TYPES = [
   'Prior Art & Patentability Search',
@@ -85,7 +85,7 @@ export default function DiscussProject({ session, onContinueToQuote, onContinueT
     try {
       setStatus({ type: 'loading', message: 'Submitting your project discussion…' })
 
-      const { data, error } = await supabase.functions.invoke('submit-discussion', {
+      const { data, error } = await invokeFunction('submit-discussion', {
         body: payload,
       })
 

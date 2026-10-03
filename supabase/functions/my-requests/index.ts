@@ -1,4 +1,5 @@
 import { withSupabase } from 'npm:@supabase/server@^1'
+import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
 type ReplyRecord = {
   id: string
@@ -956,7 +957,7 @@ async function quoteDecision(
 export default {
   fetch: withSupabase(
     { auth: 'user' },
-    async (req, ctx) => {
+    withRequestRateLimit(async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json(
           { ok: false, error: 'Method not allowed.' },
@@ -978,6 +979,15 @@ export default {
           body = await req.json()
         } catch {
           body = {}
+        }
+
+        const limitedAction = body.action === 'create-document-upload'
+          ? 'upload_authorization'
+          : ['send-reply', 'submit-amendment', 'quote-decision', 'register-documents'].includes(String(body.action))
+            ? 'client_reply' : null
+        if (limitedAction) {
+          const blocked = await enforceRateLimit(ctx, userId, limitedAction)
+          if (blocked) return blocked
         }
 
         if (body.action === 'send-reply') {
@@ -1060,7 +1070,7 @@ export default {
           )
         }
 
-        const discussions: RequestRecord[] = (discussionsResult.data ?? []).map((item) => ({
+        const discussions: RequestRecord[] = (discussionsResult.data ?? []).map((item: Record<string, any>) => ({
           id: item.id,
           type: 'discussion',
           typeLabel: 'Discuss a Project',
@@ -1100,7 +1110,7 @@ export default {
           documents: [],
         }))
 
-        const quotes: RequestRecord[] = (quotesResult.data ?? []).map((item) => ({
+        const quotes: RequestRecord[] = (quotesResult.data ?? []).map((item: Record<string, any>) => ({
           id: item.id,
           type: 'quote',
           typeLabel: 'Request a Custom Quote',
@@ -1147,7 +1157,7 @@ export default {
           documents: [],
         }))
 
-        const orders: RequestRecord[] = (ordersResult.data ?? []).map((item) => ({
+        const orders: RequestRecord[] = (ordersResult.data ?? []).map((item: Record<string, any>) => ({
           id: item.id,
           type: 'search',
           typeLabel: 'Request a Search',
@@ -1331,6 +1341,6 @@ export default {
           { status: 500 },
         )
       }
-    },
+    }),
   ),
 }

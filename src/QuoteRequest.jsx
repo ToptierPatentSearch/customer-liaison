@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { supabase } from './lib/supabaseClient'
+import { supabase, invokeFunction } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
   'Prior Art & Patentability Search',
@@ -127,7 +127,7 @@ export default function QuoteRequest({ session, initialData = {}, onContinueToOr
     if (!files.length) return []
 
     const { data: authorization, error: authorizationError } =
-      await supabase.functions.invoke('create-quote-upload-url', {
+      await invokeFunction('create-quote-upload-url', {
         body: {
           quoteId,
           files: files.map((file) => ({
@@ -237,7 +237,7 @@ export default function QuoteRequest({ session, initialData = {}, onContinueToOr
         website: form.website,
       }
 
-      const { data, error } = await supabase.functions.invoke('submit-quote', { body: payload })
+      const { data, error } = await invokeFunction('submit-quote', { body: payload })
 
       if (error) throw new Error(error.message)
       if (!data?.ok) throw new Error(data?.error || 'The quotation request could not be submitted.')

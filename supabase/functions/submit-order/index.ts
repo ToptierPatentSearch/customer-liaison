@@ -1,4 +1,5 @@
 import { withSupabase } from 'npm:@supabase/server@^1'
+import { enforceRateLimit, withRequestRateLimit } from '../_shared/rate-limit.ts'
 
 const SERVICE_OPTIONS = new Set([
   'Prior Art & Patentability Search',
@@ -116,7 +117,7 @@ function validateSupportingDocuments(value: unknown, orderId: string, userId: st
 export default {
   fetch: withSupabase(
     { auth: 'user' },
-    async (req, ctx) => {
+    withRequestRateLimit(async (req, ctx) => {
       if (req.method !== 'POST') {
         return Response.json({ ok: false, error: 'Method not allowed.' }, { status: 405 })
       }
@@ -139,6 +140,9 @@ export default {
       } catch {
         return Response.json({ ok: false, error: 'Invalid JSON request.' }, { status: 400 })
       }
+
+      const blocked = await enforceRateLimit(ctx, authenticatedUserId, 'submit_order')
+      if (blocked) return blocked
 
       if (typeof body.website === 'string' && body.website.trim() !== '') {
         return Response.json({ ok: true, message: 'Order details received.' })
@@ -300,6 +304,6 @@ export default {
           { status: 400 },
         )
       }
-    },
+    }),
   ),
 }

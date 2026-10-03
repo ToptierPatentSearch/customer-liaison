@@ -4,7 +4,7 @@ import AdminMfa from './AdminMfa.jsx'
 import DiscussProject from './DiscussProject.jsx'
 import QuoteRequest from './QuoteRequest.jsx'
 import MyRequests from './MyRequests.jsx'
-import { supabase } from './lib/supabaseClient'
+import { supabase, invokeFunction } from './lib/supabaseClient'
 
 const SERVICE_OPTIONS = [
   'Prior Art & Patentability Search',
@@ -193,8 +193,7 @@ export default function App() {
 
     setAdminAccess({ checked: false, isAdmin: false })
 
-    supabase.functions
-      .invoke('admin-orders', { body: { action: 'status' } })
+    invokeFunction('admin-orders', { body: { action: 'status' } })
       .then(async ({ data, error }) => {
         if (!active) return
 
@@ -446,7 +445,7 @@ export default function App() {
 
     // 1. Ask the Edge Function for temporary upload authorization.
     const { data: authorization, error: authorizationError } =
-      await supabase.functions.invoke('create-upload-url', {
+      await invokeFunction('create-upload-url', {
         body: {
           orderId,
           files: files.map((file) => ({
@@ -552,7 +551,7 @@ export default function App() {
 
       const supportingDocuments = await uploadSupportingDocuments(orderId)
 
-      const { data, error } = await supabase.functions.invoke('submit-order', {
+      const { data, error } = await invokeFunction('submit-order', {
         body: {
           orderId,
           discussionId: form.discussionId || null,

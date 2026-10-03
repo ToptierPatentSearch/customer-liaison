@@ -47,8 +47,8 @@ for (const outcome of ['notification-failure', 'success', 'refresh-failure', 're
       return [state[index], value => { state[index] = value }]
     }
     const h = (type, props, ...children) => ({ type, props: props || {}, children })
-    const render = new Function('useState', 'useRef', 'supabase', 'h', 'textOrDash', 'fileSize', 'formatDateTime', compiled.code)(
-      useState, () => input, supabase, h, value => value, () => '2 KB', () => 'today',
+    const render = new Function('useState', 'useRef', 'supabase', 'invokeFunction', 'h', 'textOrDash', 'fileSize', 'formatDateTime', compiled.code)(
+      useState, () => input, supabase, (...args) => supabase.functions.invoke(...args), h, value => value, () => '2 KB', () => 'today',
     )
     let tree = render({ recordType: 'discussion', recordId: 'request-id' })
     const publish = elements(tree).find(el => el.type === 'button' && el.children.includes('Publish Documents'))

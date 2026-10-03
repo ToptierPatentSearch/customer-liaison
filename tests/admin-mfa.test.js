@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { transform } from 'esbuild'
+import { importEdgeFunction } from './helpers/importEdgeFunction.js'
 import { ADMIN_FACTOR_NAME, authenticatorQrSource, loadAdminFactors, startAdminEnrollment, verifyAdminFactor } from '../src/lib/adminMfa.js'
 
-const source = (await readFile(new URL('../supabase/functions/admin-orders/index.ts', import.meta.url), 'utf8'))
-  .replace("import { withSupabase } from 'npm:@supabase/server@^1'", 'const withSupabase = (_options, handler) => handler')
-const compiled = await transform(source, { loader: 'ts', format: 'esm' })
-const { default: handler } = await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
+const { default: handler } = await importEdgeFunction(new URL('../supabase/functions/admin-orders/index.ts', import.meta.url))
 
 function context({ admin = true, aal = 'aal1', metadata = {} } = {}) {
   const touched = []
@@ -15,6 +11,7 @@ function context({ admin = true, aal = 'aal1', metadata = {} } = {}) {
     userClaims: { id: 'admin-user', userMetadata: metadata },
     jwtClaims: { aal, user_metadata: metadata },
     supabaseAdmin: {
+      async rpc() { return { data: [{ allowed: true, retry_after_seconds: 0 }], error: null } },
       from(table) {
         touched.push(table)
         const query = {
