@@ -5,6 +5,7 @@ import { loadRecoveryMfaRequirement, verifyRecoveryMfaFactor } from '../src/lib/
 
 const authShellSource = await readFile(new URL('../src/AuthShell.jsx', import.meta.url), 'utf8')
 const recoveryPanelSource = await readFile(new URL('../src/RecoveryPasswordReset.jsx', import.meta.url), 'utf8')
+const recoveryMfaSource = await readFile(new URL('../src/lib/recoveryMfa.js', import.meta.url), 'utf8')
 
 test('password recovery uses the MFA-aware reset panel', () => {
   assert.match(authShellSource, /import RecoveryPasswordReset from ['"]\.\/RecoveryPasswordReset\.jsx['"]/)
@@ -69,7 +70,7 @@ test('recovery MFA challenge must upgrade the session to AAL2', async () => {
 
 test('recovery UI handles Supabase insufficient_aal as an MFA step', () => {
   assert.match(recoveryPanelSource, /insufficient_aal/)
-  assert.match(recoveryPanelSource, /challengeAndVerify/)
+  assert.match(recoveryMfaSource, /challengeAndVerify/)
   assert.match(recoveryPanelSource, /Verify your authenticator/)
   assert.match(recoveryPanelSource, /Verify and Continue/)
   assert.match(recoveryPanelSource, /updateUser\(\{ password \}\)/)
