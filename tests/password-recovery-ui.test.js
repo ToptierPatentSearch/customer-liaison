@@ -42,5 +42,6 @@ test('password recovery validates minimum length and confirmation', () => {
 
 test('rate-limited recovery requests receive a specific message', () => {
   assert.match(authShellSource, /over_email_send_rate_limit/)
-  assert.match(authShellSource, /wait about 60 seconds/)
+  assert.match(authShellSource, /Too many recovery emails have been requested\. Please wait and try again later\./)
+  assert.doesNotMatch(authShellSource, /wait about 60 seconds/)
 })
