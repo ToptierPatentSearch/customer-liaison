@@ -1,0 +1,7 @@
+name: Customer Liaison application security
+queries:
+  - uses: security-extended
+paths:
+  - src
+  - supabase/functions
+  - vite.config.js

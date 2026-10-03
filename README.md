@@ -546,3 +546,33 @@ Chromium verifies password sign-in, the authenticator QR image and MFA verificat
 After deployment, open the public sign-in page in a fresh browser context and confirm that the deployed HTML contains the policy and renders normally. Actual account credentials and a physical authenticator are intentionally outside automated tests. Inspect browser CSP errors during routine sign-in and file use and after future resource changes; keep the production policy enforced.
 
 References: [MDN Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP), [Vite CSP behavior](https://vite.dev/guide/features.html#content-security-policy-csp).
+
+## 17. GitHub repository security (protection Section 10)
+
+Dependabot checks npm packages every Friday at 9:00 AM and GitHub Actions at 9:15 AM in Japan. Compatible npm minor/patch updates are grouped; major updates remain separate. Updates arrive as pull requests for review and testing; this configuration does not automatically merge or deploy them. The GitHub Actions ecosystem also maintains full commit-SHA pins.
+
+The `Dependency security` workflow runs on pull requests to `main`, pushes to `main`, manual dispatch, and Fridays at 9:30 AM in Japan. `npm run audit:dependencies` includes runtime and development packages and fails for high/critical advisories or registry/audit errors. Lower-severity advisories remain visible and need review. The audit job installs the committed lockfile without lifecycle scripts and uses no application secrets. The Pages build also runs this audit before deployment. Dependency vulnerability checks use npm's advisory database; they do not inspect uploaded client documents or guarantee that every package is trustworthy.
+
+`CodeQL security` scans JavaScript/TypeScript in `src`, `supabase/functions`, and `vite.config.js` with the `security-extended` query suite. It runs on every pull request to `main`, pushes to `main`, manual dispatch, and Fridays at 9:40 AM in Japan. It requires no npm installation, application build, Supabase access, or customer data. Results appear in GitHub's Security/code scanning area. A successful analysis job means the scan ran successfully, not that every reported finding is safe; review and resolve the alerts.
+
+All directly referenced workflow actions are pinned to verified full commit SHAs from the upstream repositories, with release comments for maintainers. Validation and deployment use Node.js 24. Checkouts do not persist GitHub credentials. Workflow tokens are read-only by default; only the CodeQL job receives `security-events: write`, and only the Pages deployment job receives `pages: write` and `id-token: write`. The Pages build receives `pages: read` for Pages configuration. Pull requests use `pull_request`, not a privileged `pull_request_target` checkout. Continue to use GitHub-hosted runners for this public repository.
+
+### Required main branch settings
+
+Workflow files cannot enforce branch protection by themselves. After these checks have run, protect the exact branch `main` in **Settings → Rules → Rulesets** or **Settings → Branches**. Require a pull request and the following passing checks from the GitHub Actions app:
+
+- `Client workflow validation`
+- `Dependency vulnerability audit`
+- `CodeQL JavaScript and TypeScript`
+
+Require the branch to be up to date before merging, require conversation resolution, prohibit force pushes and branch deletion, and apply the rule to administrators without a bypass. For a sole maintainer, require a pull request with **zero mandatory independent approvals** so the owner can merge after checks pass; the author cannot approve their own pull request. Add independent reviewer requirements when another qualified maintainer is available. Do not require the Pages deployment check before merging: deployment starts only after a merge to `main` and would prevent all merges if required beforehand. Do not require the old ambiguous `build` check name.
+
+Confirm the rule is active; merely adding this documentation does not protect `main`. Also confirm Dependabot alerts/security updates are enabled in **Settings → Advanced Security** (the dependency graph is already available for a public repository). The version-update configuration and scheduled npm audit remain useful even when those additional settings cannot be changed by the repository connection.
+
+### Maintenance
+
+Review failed Actions runs and Security alerts every Friday. Inspect the exact package/action changes and release notes, run the application checks, and merge reviewed update pull requests individually. Do not use `npm audit fix --force` or suppress an audit failure solely to make a deployment succeed. Investigate registry failures and rerun a transient failure rather than marking the job successful.
+
+The initial Section 10 audit found a vulnerable development-only `brace-expansion` dependency. The lockfile updates it from 1.1.18 to the compatible patched 1.1.21; no runtime dependency or application behavior is changed. Recheck with `npm ci --ignore-scripts`, `npm run audit:dependencies`, `npm test`, and `npm run test:csp`. GitHub repeats these checks, the production build, and seven existing Edge Function type checks. These controls use the existing public repository and hosting; no paid scanner server or private-runner service is introduced. Section 8 remains deferred in its separate draft change.
+
+References: [Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference), [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning), [GitHub Actions secure use](https://docs.github.com/en/actions/reference/security/secure-use), [Protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches), [npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit/).
