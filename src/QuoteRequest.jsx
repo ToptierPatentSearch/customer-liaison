@@ -1,14 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase, invokeFunction } from './lib/supabaseClient'
-
-const SERVICE_OPTIONS = [
-  'Prior Art & Patentability Search',
-  'Invalidity / Validity Search',
-  'Freedom-to-Operate Search',
-  'Patent Landscape / Competitive Analysis',
-  'Search Strategy / Classification Support',
-  'Other / Customized Assignment',
-]
+import { SERVICE_OPTIONS } from './lib/requestReuse.js'
 
 const DELIVERABLE_OPTIONS = [
   'Search report',
@@ -54,6 +46,7 @@ function validateQuoteForm(form) {
   if (!form.searchObjective.trim()) return 'Please describe the purpose of the requested search.'
   if (!form.jurisdictions.trim()) return 'Please enter the relevant jurisdictions.'
   if (!form.preferredDeliverable) return 'Please select a preferred deliverable.'
+  if (form.additionalInformation.length > 5000) return 'Please shorten the additional information to 5,000 characters or fewer before submitting.'
   if (!form.acknowledgment) return 'Please confirm the quotation acknowledgment before submitting.'
   return ''
 }
@@ -270,7 +263,14 @@ export default function QuoteRequest({ session, initialData = {}, onContinueToOr
 
   return (
     <>
-      {form.discussionId && status.type === 'idle' && (
+      {initialData.sourceReference && status.type === 'idle' && !quoteReference && (
+        <div className="discussion-link-note" role="status">
+          <strong>Prefilled from My Requests: {initialData.sourceReference}</strong>
+          <span>Review the copied information, add any supporting files, and confirm the acknowledgment before submitting this new custom quote request.</span>
+        </div>
+      )}
+
+      {!initialData.sourceReference && form.discussionId && status.type === 'idle' && (
         <div className="discussion-link-note" role="status">
           <strong>Project discussion carried forward</strong>
           <span>Core project information has been prefilled. Add the commercial and scope details needed to prepare a custom quotation.</span>

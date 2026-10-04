@@ -253,12 +253,6 @@ function formatDetailValue(key, value) {
   return String(value)
 }
 
-function navigateToSearch() {
-  const url = new URL(window.location.href)
-  url.searchParams.delete('view')
-  window.location.assign(url.toString())
-}
-
 function scrollToSection(requestId, section) {
   document.getElementById(`${section}-${requestId}`)?.scrollIntoView({
     behavior: 'smooth',
@@ -278,7 +272,7 @@ function validateFiles(files) {
   return ''
 }
 
-export default function MyRequests() {
+export default function MyRequests({ onRequestQuote, onRequestOrder }) {
   const [requests, setRequests] = useState([])
   const [status, setStatus] = useState({ type: 'loading', message: 'Loading your requests…' })
   const [filter, setFilter] = useState('all')
@@ -870,6 +864,7 @@ export default function MyRequests() {
             const detailFields = DETAIL_FIELDS[request.type] || []
 
             return (
+              <article className="customer-request-entry" key={request.id} aria-label={`${request.typeLabel}: ${request.reference || request.subject}`}>
               <details
                 className={`customer-request-card${request.hasStatusUpdate ? ' has-status-update' : ''}${request.hasUnreadMessage ? ' has-message-update' : ''}`}
                 key={request.id}
@@ -926,7 +921,7 @@ export default function MyRequests() {
                         </button>
                       )}
                       {nextAction.target === 'search' && (
-                        <button className="primary-button" type="button" onClick={navigateToSearch}>
+                        <button className="primary-button" type="button" onClick={() => onRequestOrder(request)}>
                           Request a Search
                         </button>
                       )}
@@ -1248,6 +1243,18 @@ export default function MyRequests() {
                   )}
                 </div>
               </details>
+              <div className="request-reuse-actions">
+                <p>Use this request’s information to prepare a new quote or search request.</p>
+                <div>
+                  <button className="secondary-button" type="button" onClick={() => onRequestQuote(request)} title="Request a Custom Quote using this request">
+                    Quote
+                  </button>
+                  <button className="primary-button" type="button" onClick={() => onRequestOrder(request)} title="Request a Search using this request">
+                    Order
+                  </button>
+                </div>
+              </div>
+              </article>
             )
           })}
         </div>
