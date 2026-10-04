@@ -394,6 +394,7 @@ Signed-in clients can:
 - filter by All, Action Required, Active, or Completed and search by request information
 - review a context-sensitive **Next Action**
 - open the complete original submission as a read-only historical record
+- use **Quote** or **Order** on any request card to prefill **Request a Custom Quote** or **Request a Search**, respectively
 - securely open original supporting documents
 - add further supporting documents after submission
 - receive and securely open quotations, reports, and other documents published by Top-tier Patent Search
@@ -402,6 +403,15 @@ Signed-in clients can:
 - continue to use the existing request conversation and status-history timeline
 
 Opening a request acknowledges only the status version and administrator message IDs actually rendered by that client view. A newer update arriving concurrently is therefore not cleared accidentally.
+
+### Reuse a request for a quote or search
+
+1. Open **My Requests** and locate the discussion, quote, or search request whose information you want to reuse.
+2. Click **Quote** to open **Request a Custom Quote**, or **Order** to open **Request a Search**. Both buttons remain visible with the request details collapsed and are available on completed requests as well.
+3. Review the prefilled contact information, service, technical subject, objective, jurisdictions, dates, known patent documents and competitors, deliverable, and available notes. ISO completion dates are displayed as Month/Day/Year. Missing information must be completed before submission.
+4. Add supporting files as needed and confirm the new acknowledgment, then submit the form. Clicking Quote or Order prepares a draft; it does not immediately submit a request or accept a quotation.
+
+The source reference is included in the new request's additional information/instructions. Discussion-to-quote, discussion-to-search, and quote-to-search submissions also use the existing authenticated origin links and stage transitions. Reusing a quote for another quote, or a search for a new quote/search, creates a separate request with the source reference in its notes. Acknowledgments, previous draft values, uploaded files, replies, status, and record IDs are not copied into the new submission. The signed-in account supplies the email address. No new database migration or Edge Function deployment is required for these buttons.
 
 ### Private document workspace
 

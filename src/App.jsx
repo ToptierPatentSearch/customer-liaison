@@ -5,15 +5,7 @@ import DiscussProject from './DiscussProject.jsx'
 import QuoteRequest from './QuoteRequest.jsx'
 import MyRequests from './MyRequests.jsx'
 import { supabase, invokeFunction } from './lib/supabaseClient'
-
-const SERVICE_OPTIONS = [
-  'Prior Art & Patentability Search',
-  'Invalidity / Validity Search',
-  'Freedom-to-Operate Search',
-  'Patent Landscape / Competitive Analysis',
-  'Search Strategy / Classification Support',
-  'Other / Customized Assignment',
-]
+import { SERVICE_OPTIONS, requestDataForForm } from './lib/requestReuse.js'
 
 const DELIVERABLE_OPTIONS = [
   'Search report',
@@ -48,6 +40,7 @@ const initialForm = {
   website: '',
   discussionId: '',
   quoteId: '',
+  sourceReference: '',
 }
 
 function getAuthRedirectUrl() {
@@ -103,6 +96,7 @@ function validateOrderForm(form) {
   if (!form.searchObjective.trim()) return 'Please enter the search objective.'
   if (!form.jurisdictions.trim()) return 'Please enter the relevant jurisdictions.'
   if (!form.preferredDeliverable) return 'Please select a preferred deliverable.'
+  if (form.additionalInstructions.length > 5000) return 'Please shorten the additional instructions to 5,000 characters or fewer before submitting.'
   if (!form.acknowledgment) return 'Please confirm the scope-review acknowledgment before submitting.'
   return ''
 }
@@ -356,6 +350,7 @@ export default function App() {
       knownPatentDocuments: discussion.knownPatentDocuments || '',
       additionalInstructions: carriedInstructions,
       discussionId: discussion.discussionId || '',
+      sourceReference: '',
     }))
     setStatus({ type: 'idle', message: '' })
     setOrderReference('')
@@ -381,6 +376,19 @@ export default function App() {
       discussionId: discussion.discussionId || '',
     })
     navigateView('quote')
+  }
+
+  function handleReuseRequest(request, target) {
+    const seed = requestDataForForm(request, target)
+    if (target === 'quote') {
+      setQuoteSeed(seed)
+    } else {
+      setForm({ ...initialForm, ...seed, email: session?.user?.email ?? '' })
+      setFiles([])
+      setStatus({ type: 'idle', message: '' })
+      setOrderReference('')
+    }
+    navigateView(target)
   }
 
   function handleContinueQuoteToOrder(quote) {
@@ -411,6 +419,7 @@ export default function App() {
       additionalInstructions: carriedInstructions,
       discussionId: quote.discussionId || '',
       quoteId: quote.quoteId || '',
+      sourceReference: '',
     }))
     setStatus({ type: 'idle', message: '' })
     setOrderReference('')
@@ -789,7 +798,10 @@ export default function App() {
             </div>
           </div>
 
-          <MyRequests />
+          <MyRequests
+            onRequestQuote={(request) => handleReuseRequest(request, 'quote')}
+            onRequestOrder={(request) => handleReuseRequest(request, 'order')}
+          />
         </section>
       </main>
     )
@@ -893,7 +905,14 @@ export default function App() {
           </div>
         </div>
 
-        {form.quoteId && status.type === 'idle' && (
+        {form.sourceReference && status.type === 'idle' && (
+          <div className="discussion-link-note" role="status">
+            <strong>Prefilled from My Requests: {form.sourceReference}</strong>
+            <span>Review the copied information, add any supporting files, and confirm the acknowledgment before submitting this new search request.</span>
+          </div>
+        )}
+
+        {!form.sourceReference && form.quoteId && status.type === 'idle' && (
           <div className="discussion-link-note" role="status">
             <strong>Custom quote request carried forward</strong>
             <span>
@@ -902,7 +921,7 @@ export default function App() {
           </div>
         )}
 
-        {!form.quoteId && form.discussionId && status.type === 'idle' && (
+        {!form.sourceReference && !form.quoteId && form.discussionId && status.type === 'idle' && (
           <div className="discussion-link-note" role="status">
             <strong>Project discussion carried forward</strong>
             <span>
