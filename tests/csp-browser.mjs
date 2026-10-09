@@ -17,7 +17,7 @@ assert.ok(built.indexOf('http-equiv="Content-Security-Policy"') < built.indexOf(
 assert.ok(built.includes("style-src 'self'") && !built.includes('unsafe-inline') && !built.includes('unsafe-eval'))
 const dev = await createViteServer({ server: { middlewareMode: true }, appType: 'custom' })
 try {
-  const devHtml = await dev.transformIndexHtml('/customer-liaison/', source)
+  const devHtml = await dev.transformIndexHtml('/', source)
   assert.ok(!devHtml.includes('http-equiv="Content-Security-Policy"'))
   assert.ok(devHtml.includes('/@vite/client'), 'Local hot reload remains available')
 } finally { await dev.close() }
@@ -26,15 +26,14 @@ const directory = resolve('dist')
 const server = createHttpServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname
-    if (!pathname.startsWith('/customer-liaison/')) throw new Error('Unknown route')
-    if (pathname === '/customer-liaison/csp-eval-probe.js') {
+    if (pathname === '/csp-eval-probe.js') {
       // Browser automation evaluations can bypass the unsafe-eval restriction.
       // Run this check from a normally loaded, permitted script instead.
       response.writeHead(200, { 'Content-Type': 'text/javascript' })
       response.end("try { new Function('return 1')(); window.cspEvalBlocked = false } catch { window.cspEvalBlocked = true }")
       return
     }
-    const file = resolve(directory, pathname.slice('/customer-liaison/'.length) || 'index.html')
+    const file = resolve(directory, pathname.slice(1) || 'index.html')
     if (!file.startsWith(directory + '/')) throw new Error('Invalid path')
     const body = await readFile(file)
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
@@ -129,7 +128,7 @@ try {
   const page = await context.newPage()
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
-  await page.goto(origin + '/customer-liaison/?view=quote')
+  await page.goto(origin + '/?view=quote')
   await page.getByLabel('Email address').fill('synthetic@example.test')
   await page.getByLabel('Password').fill('synthetic-password')
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
@@ -281,7 +280,7 @@ try {
     document.body.appendChild(form)
     form.submit()
     const probe = document.createElement('script')
-    probe.src = '/customer-liaison/csp-eval-probe.js'
+    probe.src = '/csp-eval-probe.js'
     await new Promise((done, reject) => { probe.onload = done; probe.onerror = reject; document.head.appendChild(probe) })
     let connectionBlocked = false
     try { await fetch('https://blocked.invalid/data') } catch { connectionBlocked = true }
